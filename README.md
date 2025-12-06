@@ -4,9 +4,10 @@ A modern graphical user interface for visualizing and managing Nion electron mic
 
 ## Features
 
-- **Data Visualization**: View 2D images, line profiles, and multi-dimensional data
-- **Free-Tiling Workspace**: NEW! Nion Swift-style panel management with flexible splitting
+- **Free-Tiling Workspace** (Default): Nion Swift-style panel management with flexible splitting
+- **Drag & Drop Support**: Drag nhdf files from file browser or system directly to panels
 - **Multi-file Preview**: Open and compare multiple nhdf files simultaneously
+- **Data Visualization**: View 2D images, line profiles, and multi-dimensional data
 - **Metadata Browser**: Explore comprehensive metadata including calibrations, timestamps, and instrument parameters
 - **Export Options**: Export data to various formats (TIFF, PNG, JPG, MP4 video, CSV, JSON)
 - **Modern UI**: Clean, dark-themed interface built with PySide6 (Qt), inspired by Nion Swift
@@ -40,21 +41,25 @@ A modern graphical user interface for visualizing and managing Nion electron mic
 
 ## Usage
 
-### Standard Mode (Single Panel)
+### Default Mode (Free-Tiling Workspace)
 ```bash
 conda activate nhdf-gui
 python main.py [file.nhdf]
 ```
 
-### Workspace Mode (Free-Tiling Panels)
+### Simple Mode (Single Panel)
 ```bash
 conda activate nhdf-gui
-python main.py --workspace [file.nhdf]
+python main.py --simple [file.nhdf]
 ```
 
 ### Workspace Features
-When running in workspace mode (`--workspace`), you can:
+The application runs in workspace mode by default, where you can:
 
+- **Load Files via Drag & Drop**:
+  - Drag nhdf files from the file browser panel to any workspace panel
+  - Drag files directly from your system (Finder/Explorer) to panels
+  - Panels highlight in blue when hovering with a valid file
 - **Split Panels**:
   - Horizontal split: `Ctrl+H` or View → Workspace → Split Horizontally
   - Vertical split: `Ctrl+V` or View → Workspace → Split Vertically

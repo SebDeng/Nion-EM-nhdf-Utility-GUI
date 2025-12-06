@@ -693,3 +693,13 @@ class DisplayPanel(QWidget):
     def data(self) -> Optional[NHDFData]:
         """Get the current data."""
         return self._data
+
+    def get_current_colormap(self) -> str:
+        """Get the current colormap name."""
+        return self._colormap_combo.currentText() if hasattr(self, '_colormap_combo') else "viridis"
+
+    def get_display_range(self) -> tuple:
+        """Get the current display range (min, max)."""
+        if hasattr(self, '_min_spin') and hasattr(self, '_max_spin'):
+            return (self._min_spin.value(), self._max_spin.value())
+        return None

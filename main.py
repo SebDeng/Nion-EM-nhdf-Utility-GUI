@@ -6,8 +6,8 @@ A modern graphical user interface for viewing and managing
 Nion electron microscopy nhdf files.
 
 Usage:
-    python main.py [file.nhdf]                  # Standard single-panel mode
-    python main.py --workspace [file.nhdf]      # Workspace mode with free-tiling
+    python main.py [file.nhdf]           # Workspace mode with free-tiling (default)
+    python main.py --simple [file.nhdf]  # Simple single-panel mode
 """
 
 import sys
@@ -216,8 +216,8 @@ def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Nion nhdf Utility GUI")
     parser.add_argument("file", nargs="?", help="nhdf file to open")
-    parser.add_argument("--workspace", action="store_true",
-                        help="Enable workspace mode with free-tiling panels")
+    parser.add_argument("--simple", action="store_true",
+                        help="Use simple single-panel mode instead of workspace")
     args = parser.parse_args()
 
     # Enable high DPI scaling
@@ -242,10 +242,10 @@ def main():
         app.setWindowIcon(QIcon(icon_path))
 
     # Create main window based on mode
-    if args.workspace:
-        window = WorkspaceMainWindow()
-    else:
+    if args.simple:
         window = MainWindow()
+    else:
+        window = WorkspaceMainWindow()  # Default to workspace mode
 
     window.show()
 

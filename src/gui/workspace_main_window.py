@@ -518,32 +518,63 @@ class WorkspaceMainWindow(QMainWindow):
 
     def _load_file_in_panel(self, panel: WorkspacePanel, path: pathlib.Path):
         """Load a file in a specific panel."""
+        # Safety check - ensure panel is still valid
+        try:
+            # Test if panel is still valid by accessing a property
+            panel_id = panel.panel_id
+        except RuntimeError:
+            # Panel was deleted, find the selected panel instead
+            if self._workspace.selected_panel:
+                panel = self._workspace.selected_panel
+            else:
+                return  # No valid panel to load into
+
         # Convert to WorkspaceDisplayPanel if needed
         if not isinstance(panel, WorkspaceDisplayPanel):
-            # Replace with display panel
+            # Create new display panel
             new_panel = WorkspaceDisplayPanel(panel.panel_id)
             new_panel.close_requested.connect(self._workspace._handle_panel_close)
             new_panel.split_requested.connect(self._workspace._handle_panel_split)
             new_panel.file_dropped.connect(self._workspace._handle_file_dropped)
             new_panel.data_loaded.connect(lambda data: self._on_data_loaded_in_panel(new_panel, data))
 
-            # Replace in workspace
-            parent = panel.parent()
-            from PySide6.QtWidgets import QSplitter
-            if isinstance(parent, QSplitter):
-                index = parent.indexOf(panel)
-                panel.setParent(None)
-                parent.insertWidget(index, new_panel)
-            elif hasattr(self._workspace, 'layout'):
-                self._workspace.layout.removeWidget(panel)
-                self._workspace.layout.addWidget(new_panel)
+            # Get parent and index before modifying
+            try:
+                parent = panel.parent()
+            except RuntimeError:
+                # Panel is already deleted, abort
+                return
 
-            # Update references
-            idx = self._workspace.panels.index(panel)
-            self._workspace.panels[idx] = new_panel
-            panel.deleteLater()
-            panel = new_panel
-            self._workspace._select_panel(new_panel)
+            # Update references BEFORE removing from parent
+            if panel in self._workspace.panels:
+                idx = self._workspace.panels.index(panel)
+                self._workspace.panels[idx] = new_panel
+
+                # If this was the selected panel, update selection reference
+                if self._workspace.selected_panel == panel:
+                    self._workspace.selected_panel = new_panel
+
+                # Now replace in the UI
+                from PySide6.QtWidgets import QSplitter
+                if isinstance(parent, QSplitter):
+                    index = parent.indexOf(panel)
+                    panel.setParent(None)
+                    parent.insertWidget(index, new_panel)
+                elif hasattr(self._workspace, 'layout'):
+                    self._workspace.layout.removeWidget(panel)
+                    self._workspace.layout.addWidget(new_panel)
+
+                # Delete old panel after all references are updated
+                panel.deleteLater()
+
+                # Now select the new panel
+                self._workspace._select_panel(new_panel)
+
+                # Use the new panel for loading
+                panel = new_panel
+            else:
+                # Panel not in list, something went wrong
+                return
 
         # Load file
         try:

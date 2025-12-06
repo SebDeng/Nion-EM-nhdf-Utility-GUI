@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QWidget, QSplitter, QVBoxLayout, QHBoxLayout, QMenu,
     QLabel, QPushButton, QTabWidget, QToolButton
 )
-from PySide6.QtCore import Qt, Signal, QSettings, QMimeData, QUrl
+from PySide6.QtCore import Qt, Signal, QSettings, QMimeData, QUrl, QEvent
 from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QDragMoveEvent
 
 import json
@@ -121,6 +121,8 @@ class WorkspacePanel(QWidget):
                 border: 1px solid #3c3c3c;
             }
         """)
+        # Install event filter to catch clicks on content area
+        self.content_area.installEventFilter(self)
         layout.addWidget(self.content_area, stretch=1)
 
     def set_content(self, widget: QWidget):
@@ -321,6 +323,39 @@ class WorkspacePanel(QWidget):
 
         event.ignore()
 
+    def eventFilter(self, obj, event):
+        """Event filter to catch clicks on content area."""
+        if obj == self.content_area and event.type() == QEvent.MouseButtonPress:
+            if event.button() == Qt.LeftButton:
+                # Trigger panel selection
+                parent = self.parent()
+                while parent and not isinstance(parent, WorkspaceWidget):
+                    parent = parent.parent()
+
+                if parent and isinstance(parent, WorkspaceWidget):
+                    parent._select_panel(self)
+                    parent.panel_selected.emit(self)
+                return True
+
+        return super().eventFilter(obj, event)
+
+    def mousePressEvent(self, event):
+        """Handle mouse press to select this panel."""
+        # Request selection when clicked
+        if event.button() == Qt.LeftButton:
+            # Get the workspace widget (parent tree)
+            parent = self.parent()
+            while parent and not isinstance(parent, WorkspaceWidget):
+                parent = parent.parent()
+
+            if parent and isinstance(parent, WorkspaceWidget):
+                parent._select_panel(self)
+                # Emit panel_selected signal so main window can update
+                parent.panel_selected.emit(self)
+
+        # Call base implementation
+        super().mousePressEvent(event)
+
 
 class WorkspaceWidget(QWidget):
     """
@@ -366,12 +401,18 @@ class WorkspaceWidget(QWidget):
 
     def _select_panel(self, panel: WorkspacePanel):
         """Select a panel as the active one."""
-        if self.selected_panel:
-            self.selected_panel.set_selected(False)
+        # Check if the previous selected panel is valid
+        if self.selected_panel and self.selected_panel in self.panels:
+            try:
+                self.selected_panel.set_selected(False)
+            except RuntimeError:
+                # Panel was deleted, ignore
+                pass
 
         self.selected_panel = panel
-        panel.set_selected(True)
-        self.panel_selected.emit(panel)
+        if panel:
+            panel.set_selected(True)
+            self.panel_selected.emit(panel)
 
     def _handle_panel_close(self, panel: WorkspacePanel):
         """Handle panel close request."""
@@ -555,10 +596,17 @@ class WorkspaceWidget(QWidget):
 
     def save_layout(self) -> Dict[str, Any]:
         """Save the current workspace layout."""
-        return {
-            'version': 1,
-            'layout': self.to_dict()
-        }
+        try:
+            return {
+                'version': 1,
+                'layout': self.to_dict()
+            }
+        except Exception as e:
+            # Return a default layout if there's an error
+            return {
+                'version': 1,
+                'layout': {'type': 'panel', 'title': 'Empty Panel'}
+            }
 
     def load_layout(self, layout_data: Dict[str, Any]):
         """Load a workspace layout."""
