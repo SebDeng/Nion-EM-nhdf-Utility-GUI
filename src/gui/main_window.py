@@ -5,10 +5,10 @@ Main application window for nhdf Utility GUI.
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QDockWidget, QMenuBar, QMenu, QStatusBar, QFileDialog,
-    QMessageBox, QApplication
+    QMessageBox, QApplication, QDialog, QLabel
 )
 from PySide6.QtCore import Qt, Signal, QSettings
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QKeySequence, QPixmap
 
 import pathlib
 from typing import Optional
@@ -301,15 +301,52 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, self._metadata_dock)
 
     def _on_about(self):
-        """Show about dialog."""
-        QMessageBox.about(
-            self,
-            "About Nion nhdf Utility",
-            "<h3>Nion nhdf Utility GUI</h3>"
+        """Show about dialog with logo."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("About Atomic Engineering nhdf Utility")
+        dialog.setFixedSize(500, 350)
+
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(16)
+        layout.setContentsMargins(24, 24, 24, 24)
+
+        # Logo
+        logo_label = QLabel()
+        logo_path = pathlib.Path(__file__).parent.parent.parent / "assets" / "AE Full Icon.png"
+        if logo_path.exists():
+            pixmap = QPixmap(str(logo_path))
+            scaled_pixmap = pixmap.scaledToWidth(400, Qt.SmoothTransformation)
+            logo_label.setPixmap(scaled_pixmap)
+            logo_label.setAlignment(Qt.AlignCenter)
+        else:
+            logo_label.setText("<h2>Atomic Engineering</h2>")
+            logo_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(logo_label)
+
+        # Title and description
+        title_label = QLabel("<h3>nhdf Utility GUI</h3>")
+        title_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title_label)
+
+        desc_label = QLabel(
             "<p>A viewer for Nion electron microscopy nhdf files.</p>"
-            "<p>Built with PySide6 (Qt)</p>"
+            "<p>Built with PySide6 (Qt) for the electron microscopy community.</p>"
+        )
+        desc_label.setAlignment(Qt.AlignCenter)
+        desc_label.setWordWrap(True)
+        layout.addWidget(desc_label)
+
+        # Links
+        links_label = QLabel(
             "<p><a href='https://github.com/SebDeng/Nion-EM-nhdf-Utility-GUI'>GitHub Repository</a></p>"
         )
+        links_label.setAlignment(Qt.AlignCenter)
+        links_label.setOpenExternalLinks(True)
+        layout.addWidget(links_label)
+
+        layout.addStretch()
+
+        dialog.exec()
 
     # --- Public API ---
 

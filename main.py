@@ -14,9 +14,13 @@ import pathlib
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPalette, QColor
+from PySide6.QtGui import QPalette, QColor, QIcon
 
 from src.gui.main_window import MainWindow
+
+# Get the directory where this script is located
+import os
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def apply_dark_theme(app: QApplication):
@@ -219,6 +223,13 @@ def main():
 
     # Apply dark theme
     apply_dark_theme(app)
+
+    # Set application icon (use pre-rounded PNG for proper appearance)
+    icon_path = os.path.join(_SCRIPT_DIR, "assets", "AppIcon_rounded.png")
+    if not os.path.exists(icon_path):
+        icon_path = os.path.join(_SCRIPT_DIR, "assets", "AE APP ICON.png")
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
 
     # Create main window
     window = MainWindow()
