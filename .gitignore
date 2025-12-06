@@ -79,3 +79,6 @@ TestFiles/
 
 # Claude Code context (local only)
 CLAUDE.md
+
+# Development planning (local only)
+DEVELOPMENT_PLAN.md
