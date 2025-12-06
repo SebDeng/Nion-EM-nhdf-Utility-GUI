@@ -6,17 +6,20 @@ A modern graphical user interface for viewing and managing
 Nion electron microscopy nhdf files.
 
 Usage:
-    python main.py [file.nhdf]
+    python main.py [file.nhdf]                  # Standard single-panel mode
+    python main.py --workspace [file.nhdf]      # Workspace mode with free-tiling
 """
 
 import sys
 import pathlib
+import argparse
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPalette, QColor, QIcon
 
 from src.gui.main_window import MainWindow
+from src.gui.workspace_main_window import WorkspaceMainWindow
 
 # Get the directory where this script is located
 import os
@@ -210,13 +213,20 @@ def apply_dark_theme(app: QApplication):
 
 def main():
     """Main entry point."""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Nion nhdf Utility GUI")
+    parser.add_argument("file", nargs="?", help="nhdf file to open")
+    parser.add_argument("--workspace", action="store_true",
+                        help="Enable workspace mode with free-tiling panels")
+    args = parser.parse_args()
+
     # Enable high DPI scaling
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
 
     # Create application
-    app = QApplication(sys.argv)
+    app = QApplication([])  # Empty list to avoid re-parsing args
     app.setApplicationName("Nion nhdf Utility")
     app.setOrganizationName("NionUtility")
     app.setOrganizationDomain("github.com/SebDeng")
@@ -231,13 +241,17 @@ def main():
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
 
-    # Create main window
-    window = MainWindow()
+    # Create main window based on mode
+    if args.workspace:
+        window = WorkspaceMainWindow()
+    else:
+        window = MainWindow()
+
     window.show()
 
-    # Load file from command line argument if provided
-    if len(sys.argv) > 1:
-        file_path = pathlib.Path(sys.argv[1])
+    # Load file if provided
+    if args.file:
+        file_path = pathlib.Path(args.file)
         if file_path.exists() and file_path.suffix.lower() == '.nhdf':
             window.load_file(file_path)
 

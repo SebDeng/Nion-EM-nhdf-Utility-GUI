@@ -7,11 +7,57 @@ from PySide6.QtWidgets import (
     QPushButton, QFileSystemModel, QHeaderView, QMenu,
     QAbstractItemView, QComboBox, QLabel
 )
-from PySide6.QtCore import Qt, Signal, QDir, QModelIndex, QSortFilterProxyModel
-from PySide6.QtGui import QAction
+from PySide6.QtCore import Qt, Signal, QDir, QModelIndex, QSortFilterProxyModel, QMimeData
+from PySide6.QtGui import QAction, QDrag
 
 import pathlib
 from typing import Optional
+
+
+class DraggableTreeView(QTreeView):
+    """Tree view that supports dragging files."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setDragEnabled(True)
+        self.setDragDropMode(QAbstractItemView.DragOnly)
+
+    def startDrag(self, supportedActions):
+        """Start a drag operation."""
+        index = self.currentIndex()
+        if not index.isValid():
+            return
+
+        # Get the model (proxy model)
+        proxy_model = self.model()
+        if not proxy_model:
+            return
+
+        # Get source model and index
+        source_model = proxy_model.sourceModel()
+        source_index = proxy_model.mapToSource(index)
+
+        # Get file path
+        file_path = source_model.filePath(source_index)
+
+        # Only allow dragging of nhdf files
+        if not file_path.lower().endswith('.nhdf'):
+            return
+
+        # Create mime data
+        mime_data = QMimeData()
+        mime_data.setText(file_path)
+
+        # Also add as URL for compatibility
+        from PySide6.QtCore import QUrl
+        mime_data.setUrls([QUrl.fromLocalFile(file_path)])
+
+        # Create drag
+        drag = QDrag(self)
+        drag.setMimeData(mime_data)
+
+        # Execute drag
+        drag.exec(Qt.CopyAction)
 
 
 class NHDFFilterProxyModel(QSortFilterProxyModel):
@@ -100,7 +146,7 @@ class FileBrowserPanel(QWidget):
         self._proxy_model.setDynamicSortFilter(True)
 
         # Tree view
-        self._tree_view = QTreeView()
+        self._tree_view = DraggableTreeView()
         self._tree_view.setModel(self._proxy_model)
         self._tree_view.setSelectionMode(QAbstractItemView.SingleSelection)
         self._tree_view.setContextMenuPolicy(Qt.CustomContextMenu)

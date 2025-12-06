@@ -5,10 +5,13 @@ A modern graphical user interface for visualizing and managing Nion electron mic
 ## Features
 
 - **Data Visualization**: View 2D images, line profiles, and multi-dimensional data
+- **Free-Tiling Workspace**: NEW! Nion Swift-style panel management with flexible splitting
 - **Multi-file Preview**: Open and compare multiple nhdf files simultaneously
 - **Metadata Browser**: Explore comprehensive metadata including calibrations, timestamps, and instrument parameters
-- **Export Options**: Export data to various formats (TIFF, PNG, CSV, HDF5)
+- **Export Options**: Export data to various formats (TIFF, PNG, JPG, MP4 video, CSV, JSON)
 - **Modern UI**: Clean, dark-themed interface built with PySide6 (Qt), inspired by Nion Swift
+- **Scale Bar**: Automatic scale bar overlay with calibrated units
+- **Frame Navigation**: Playback controls for multi-frame sequences with video export
 
 ## Installation
 
@@ -37,10 +40,32 @@ A modern graphical user interface for visualizing and managing Nion electron mic
 
 ## Usage
 
+### Standard Mode (Single Panel)
 ```bash
 conda activate nhdf-gui
-python main.py
+python main.py [file.nhdf]
 ```
+
+### Workspace Mode (Free-Tiling Panels)
+```bash
+conda activate nhdf-gui
+python main.py --workspace [file.nhdf]
+```
+
+### Workspace Features
+When running in workspace mode (`--workspace`), you can:
+
+- **Split Panels**:
+  - Horizontal split: `Ctrl+H` or View → Workspace → Split Horizontally
+  - Vertical split: `Ctrl+V` or View → Workspace → Split Vertically
+- **Close Panels**: Click the ✕ button on any panel (minimum 1 panel required)
+- **Layout Presets**: View → Workspace → Layout Presets
+  - Single Panel
+  - 2 Panels Horizontal/Vertical
+  - 4 Panel Grid (2x2)
+- **Save/Load Layouts**: Save your custom workspace arrangements
+- **Multiple Files**: Open different nhdf files in separate panels for comparison
+- **Drag to Resize**: Grab splitter handles between panels to adjust sizes
 
 ## Dependencies
 
@@ -84,19 +109,25 @@ file.nhdf
 
 ```
 Nion-EM-nhdf-Utility-GUI/
-├── main.py                  # Application entry point
+├── main.py                         # Application entry point
 ├── src/
 │   ├── core/
-│   │   └── nhdf_reader.py   # nhdf file loading and parsing
+│   │   ├── nhdf_reader.py          # nhdf file loading and parsing
+│   │   └── exporter.py             # Export functionality
 │   ├── gui/
-│   │   ├── main_window.py   # Main application window
-│   │   ├── file_browser.py  # File browser panel
-│   │   ├── display_panel.py # Image display with frame controls
-│   │   └── metadata_panel.py # Metadata browser
-│   └── utils/               # Utility modules
-├── TestFiles/               # Sample nhdf files for testing (gitignored)
-├── requirements.txt         # Python dependencies
-├── DEVELOPMENT_PLAN.md      # Development roadmap
+│   │   ├── main_window.py          # Standard single-panel window
+│   │   ├── workspace_main_window.py # Workspace mode with tiling
+│   │   ├── workspace.py            # Free-tiling workspace manager
+│   │   ├── workspace_display_panel.py # Workspace display panels
+│   │   ├── file_browser.py         # File browser panel
+│   │   ├── display_panel.py        # Image display with frame controls
+│   │   ├── metadata_panel.py       # Metadata browser
+│   │   └── export_dialog.py        # Export configuration dialog
+│   └── utils/                      # Utility modules
+├── assets/                         # Application icons
+├── TestFiles/                      # Sample nhdf files (gitignored)
+├── requirements.txt                # Python dependencies
+├── DEVELOPMENT_PLAN.md             # Development roadmap
 └── README.md
 ```
 
