@@ -76,3 +76,6 @@ TestFiles/
 
 # Logs
 *.log
+
+# Claude Code context (local only)
+CLAUDE.md
