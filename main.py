@@ -1,0 +1,238 @@
+#!/usr/bin/env python3
+"""
+Nion nhdf Utility GUI
+
+A modern graphical user interface for viewing and managing
+Nion electron microscopy nhdf files.
+
+Usage:
+    python main.py [file.nhdf]
+"""
+
+import sys
+import pathlib
+
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QPalette, QColor
+
+from src.gui.main_window import MainWindow
+
+
+def apply_dark_theme(app: QApplication):
+    """Apply a dark theme similar to Nion Swift."""
+    app.setStyle("Fusion")
+
+    palette = QPalette()
+
+    # Base colors
+    dark_gray = QColor(53, 53, 53)
+    gray = QColor(80, 80, 80)
+    light_gray = QColor(120, 120, 120)
+    very_light_gray = QColor(200, 200, 200)
+    white = QColor(255, 255, 255)
+    blue = QColor(42, 130, 218)
+
+    # Set palette colors
+    palette.setColor(QPalette.Window, dark_gray)
+    palette.setColor(QPalette.WindowText, white)
+    palette.setColor(QPalette.Base, QColor(35, 35, 35))
+    palette.setColor(QPalette.AlternateBase, dark_gray)
+    palette.setColor(QPalette.ToolTipBase, dark_gray)
+    palette.setColor(QPalette.ToolTipText, white)
+    palette.setColor(QPalette.Text, white)
+    palette.setColor(QPalette.Button, dark_gray)
+    palette.setColor(QPalette.ButtonText, white)
+    palette.setColor(QPalette.BrightText, Qt.red)
+    palette.setColor(QPalette.Link, blue)
+    palette.setColor(QPalette.Highlight, blue)
+    palette.setColor(QPalette.HighlightedText, white)
+
+    # Disabled colors
+    palette.setColor(QPalette.Disabled, QPalette.WindowText, light_gray)
+    palette.setColor(QPalette.Disabled, QPalette.Text, light_gray)
+    palette.setColor(QPalette.Disabled, QPalette.ButtonText, light_gray)
+
+    app.setPalette(palette)
+
+    # Additional stylesheet for fine-tuning
+    app.setStyleSheet("""
+        QToolTip {
+            color: #ffffff;
+            background-color: #353535;
+            border: 1px solid #505050;
+            padding: 4px;
+        }
+
+        QMenuBar {
+            background-color: #353535;
+            padding: 2px;
+        }
+
+        QMenuBar::item {
+            background-color: transparent;
+            padding: 4px 8px;
+        }
+
+        QMenuBar::item:selected {
+            background-color: #505050;
+        }
+
+        QMenu {
+            background-color: #353535;
+            border: 1px solid #505050;
+        }
+
+        QMenu::item:selected {
+            background-color: #2a82da;
+        }
+
+        QDockWidget {
+            titlebar-close-icon: url(close.png);
+            titlebar-normal-icon: url(float.png);
+        }
+
+        QDockWidget::title {
+            background-color: #404040;
+            padding: 6px;
+            text-align: left;
+        }
+
+        QStatusBar {
+            background-color: #353535;
+            border-top: 1px solid #505050;
+        }
+
+        QTreeView {
+            background-color: #2b2b2b;
+            alternate-background-color: #323232;
+            border: 1px solid #505050;
+        }
+
+        QTreeView::item:hover {
+            background-color: #404040;
+        }
+
+        QTreeView::item:selected {
+            background-color: #2a82da;
+        }
+
+        QHeaderView::section {
+            background-color: #404040;
+            padding: 4px;
+            border: 1px solid #505050;
+        }
+
+        QSlider::groove:horizontal {
+            border: 1px solid #505050;
+            height: 6px;
+            background: #2b2b2b;
+            border-radius: 3px;
+        }
+
+        QSlider::handle:horizontal {
+            background: #2a82da;
+            border: 1px solid #2a82da;
+            width: 14px;
+            margin: -4px 0;
+            border-radius: 7px;
+        }
+
+        QSlider::handle:horizontal:hover {
+            background: #3a92ea;
+        }
+
+        QSpinBox, QDoubleSpinBox {
+            background-color: #2b2b2b;
+            border: 1px solid #505050;
+            padding: 2px;
+        }
+
+        QComboBox {
+            background-color: #2b2b2b;
+            border: 1px solid #505050;
+            padding: 4px;
+        }
+
+        QComboBox::drop-down {
+            border: none;
+            width: 20px;
+        }
+
+        QLineEdit {
+            background-color: #2b2b2b;
+            border: 1px solid #505050;
+            padding: 4px;
+        }
+
+        QPushButton {
+            background-color: #404040;
+            border: 1px solid #505050;
+            padding: 6px 12px;
+            border-radius: 3px;
+        }
+
+        QPushButton:hover {
+            background-color: #505050;
+        }
+
+        QPushButton:pressed {
+            background-color: #2a82da;
+        }
+
+        QPushButton:checked {
+            background-color: #2a82da;
+        }
+
+        QCheckBox::indicator {
+            width: 16px;
+            height: 16px;
+        }
+
+        QGroupBox {
+            border: 1px solid #505050;
+            border-radius: 4px;
+            margin-top: 8px;
+            padding-top: 8px;
+        }
+
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            subcontrol-position: top left;
+            padding: 0 4px;
+        }
+    """)
+
+
+def main():
+    """Main entry point."""
+    # Enable high DPI scaling
+    QApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+    )
+
+    # Create application
+    app = QApplication(sys.argv)
+    app.setApplicationName("Nion nhdf Utility")
+    app.setOrganizationName("NionUtility")
+    app.setOrganizationDomain("github.com/SebDeng")
+
+    # Apply dark theme
+    apply_dark_theme(app)
+
+    # Create main window
+    window = MainWindow()
+    window.show()
+
+    # Load file from command line argument if provided
+    if len(sys.argv) > 1:
+        file_path = pathlib.Path(sys.argv[1])
+        if file_path.exists() and file_path.suffix.lower() == '.nhdf':
+            window.load_file(file_path)
+
+    # Run event loop
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()

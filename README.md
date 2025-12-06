@@ -8,7 +8,7 @@ A modern graphical user interface for visualizing and managing Nion electron mic
 - **Multi-file Preview**: Open and compare multiple nhdf files simultaneously
 - **Metadata Browser**: Explore comprehensive metadata including calibrations, timestamps, and instrument parameters
 - **Export Options**: Export data to various formats (TIFF, PNG, CSV, HDF5)
-- **Modern UI**: Clean, responsive interface built with PyQt5
+- **Modern UI**: Clean, dark-themed interface built with PySide6 (Qt), inspired by Nion Swift
 
 ## Installation
 
@@ -49,7 +49,7 @@ python main.py
 | Package | Version | Purpose |
 |---------|---------|---------|
 | Python | 3.11 | Runtime |
-| PyQt5 | 5.15.11 | GUI framework |
+| PySide6 | 6.10.1 | GUI framework (Qt 6, LGPL) |
 | numpy | 2.3.5 | Numerical computing |
 | h5py | 3.15.1 | HDF5 file I/O |
 | matplotlib | 3.10.7 | Data visualization |
@@ -84,13 +84,19 @@ file.nhdf
 
 ```
 Nion-EM-nhdf-Utility-GUI/
-├── main.py              # Application entry point
+├── main.py                  # Application entry point
 ├── src/
-│   ├── gui/             # UI components
-│   ├── core/            # Data loading and processing
-│   └── export/          # Export functionality
-├── TestFiles/           # Sample nhdf files for testing
-├── requirements.txt     # Python dependencies
+│   ├── core/
+│   │   └── nhdf_reader.py   # nhdf file loading and parsing
+│   ├── gui/
+│   │   ├── main_window.py   # Main application window
+│   │   ├── file_browser.py  # File browser panel
+│   │   ├── display_panel.py # Image display with frame controls
+│   │   └── metadata_panel.py # Metadata browser
+│   └── utils/               # Utility modules
+├── TestFiles/               # Sample nhdf files for testing (gitignored)
+├── requirements.txt         # Python dependencies
+├── DEVELOPMENT_PLAN.md      # Development roadmap
 └── README.md
 ```
 
