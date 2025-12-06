@@ -5,7 +5,7 @@ Main application window for nhdf Utility GUI.
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QDockWidget, QMenuBar, QMenu, QStatusBar, QFileDialog,
-    QMessageBox, QApplication, QDialog, QLabel
+    QMessageBox, QApplication, QDialog, QLabel, QPushButton
 )
 from PySide6.QtCore import Qt, Signal, QSettings
 from PySide6.QtGui import QAction, QKeySequence, QPixmap
@@ -17,6 +17,7 @@ from src.core.nhdf_reader import NHDFData, read_nhdf
 from src.gui.file_browser import FileBrowserPanel
 from src.gui.display_panel import DisplayPanel
 from src.gui.metadata_panel import MetadataPanel
+from src.gui.export_dialog import ExportDialog
 
 
 class MainWindow(QMainWindow):
@@ -55,11 +56,34 @@ class MainWindow(QMainWindow):
         self._file_browser_dock.setMinimumWidth(250)
         self.addDockWidget(Qt.LeftDockWidgetArea, self._file_browser_dock)
 
-        # Right dock - Metadata Panel
+        # Right dock - Metadata Panel with Export button
         self._metadata_dock = QDockWidget("Metadata", self)
         self._metadata_dock.setObjectName("MetadataDock")
+
+        # Create container widget with metadata panel and export button
+        metadata_container = QWidget()
+        metadata_layout = QVBoxLayout(metadata_container)
+        metadata_layout.setContentsMargins(0, 0, 0, 0)
+        metadata_layout.setSpacing(0)
+
         self._metadata_panel = MetadataPanel()
-        self._metadata_dock.setWidget(self._metadata_panel)
+        metadata_layout.addWidget(self._metadata_panel, 1)
+
+        # Export button at bottom of metadata panel
+        self._export_btn = QPushButton("Export...")
+        self._export_btn.setEnabled(False)
+        self._export_btn.setMinimumHeight(36)
+        self._export_btn.clicked.connect(self._on_export)
+        self._export_btn.setStyleSheet("""
+            QPushButton {
+                font-size: 14px;
+                font-weight: bold;
+                margin: 8px;
+            }
+        """)
+        metadata_layout.addWidget(self._export_btn)
+
+        self._metadata_dock.setWidget(metadata_container)
         self._metadata_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self._metadata_dock.setMinimumWidth(300)
         self.addDockWidget(Qt.RightDockWidgetArea, self._metadata_dock)
@@ -107,27 +131,15 @@ class MainWindow(QMainWindow):
         reset_layout_action.triggered.connect(self._reset_layout)
         view_menu.addAction(reset_layout_action)
 
-        # Export menu (placeholder for Phase 2)
+        # Export menu
         export_menu = menubar.addMenu("&Export")
 
-        export_image_action = QAction("Export &Image...", self)
-        export_image_action.setShortcut(QKeySequence("Ctrl+E"))
-        export_image_action.triggered.connect(self._on_export_image)
-        export_image_action.setEnabled(False)
-        self._export_image_action = export_image_action
-        export_menu.addAction(export_image_action)
-
-        export_data_action = QAction("Export &Data...", self)
-        export_data_action.triggered.connect(self._on_export_data)
-        export_data_action.setEnabled(False)
-        self._export_data_action = export_data_action
-        export_menu.addAction(export_data_action)
-
-        export_metadata_action = QAction("Export &Metadata...", self)
-        export_metadata_action.triggered.connect(self._on_export_metadata)
-        export_metadata_action.setEnabled(False)
-        self._export_metadata_action = export_metadata_action
-        export_menu.addAction(export_metadata_action)
+        export_action = QAction("&Export...", self)
+        export_action.setShortcut(QKeySequence("Ctrl+E"))
+        export_action.triggered.connect(self._on_export)
+        export_action.setEnabled(False)
+        self._export_action = export_action
+        export_menu.addAction(export_action)
 
         # Help menu
         help_menu = menubar.addMenu("&Help")
@@ -269,23 +281,28 @@ class MainWindow(QMainWindow):
 
     def _update_export_actions(self, enabled: bool):
         """Enable/disable export actions."""
-        self._export_image_action.setEnabled(enabled)
-        self._export_data_action.setEnabled(enabled)
-        self._export_metadata_action.setEnabled(enabled)
+        self._export_action.setEnabled(enabled)
+        self._export_btn.setEnabled(enabled)
 
-    # --- Export operations (Phase 2 placeholders) ---
+    # --- Export operations ---
 
-    def _on_export_image(self):
-        """Export current frame as image."""
-        QMessageBox.information(self, "Export", "Export Image - Coming in Phase 2")
+    def _on_export(self):
+        """Open export dialog."""
+        if self._current_data is None:
+            return
 
-    def _on_export_data(self):
-        """Export data in various formats."""
-        QMessageBox.information(self, "Export", "Export Data - Coming in Phase 2")
+        # Get current display settings from display panel
+        current_colormap = self._display_panel._colormap_combo.currentText()
+        display_min = self._display_panel._min_spin.value()
+        display_max = self._display_panel._max_spin.value()
 
-    def _on_export_metadata(self):
-        """Export metadata as JSON."""
-        QMessageBox.information(self, "Export", "Export Metadata - Coming in Phase 2")
+        dialog = ExportDialog(
+            self._current_data,
+            parent=self,
+            current_colormap=current_colormap,
+            display_range=(display_min, display_max)
+        )
+        dialog.exec()
 
     # --- View operations ---
 
