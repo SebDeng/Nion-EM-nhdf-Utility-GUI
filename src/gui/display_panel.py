@@ -414,10 +414,11 @@ class DisplayPanel(QWidget):
 
     frame_changed = Signal(int)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, show_controls=True):
         super().__init__(parent)
         self._data: Optional[NHDFData] = None
         self._current_frame = 0
+        self._show_controls = show_controls
 
         self._setup_ui()
 
@@ -429,13 +430,14 @@ class DisplayPanel(QWidget):
 
         # Image display area using pyqtgraph
         self._graphics_widget = pg.GraphicsLayoutWidget()
-        self._graphics_widget.setBackground('k')  # Black background like Nion Swift
+        self._graphics_widget.setBackground('#1e1e1e')  # Default dark background
 
         # Create plot item for image display
         self._plot_item = self._graphics_widget.addPlot()
         self._plot_item.setAspectLocked(True)
         self._plot_item.hideAxis('left')
         self._plot_item.hideAxis('bottom')
+        self._plot_item.getViewBox().setBackgroundColor('#1e1e1e')  # Set ViewBox background too
 
         # Image item
         self._image_item = pg.ImageItem()
@@ -456,80 +458,121 @@ class DisplayPanel(QWidget):
 
         layout.addWidget(self._graphics_widget, 1)
 
-        # Display controls bar
-        controls_frame = QFrame()
-        controls_frame.setFrameShape(QFrame.StyledPanel)
-        controls_layout = QHBoxLayout(controls_frame)
-        controls_layout.setContentsMargins(8, 4, 8, 4)
-        controls_layout.setSpacing(12)
+        # Display controls bar (only if show_controls is True)
+        if self._show_controls:
+            controls_frame = QFrame()
+            controls_frame.setFrameShape(QFrame.StyledPanel)
+            controls_layout = QHBoxLayout(controls_frame)
+            controls_layout.setContentsMargins(8, 4, 8, 4)
+            controls_layout.setSpacing(12)
 
-        # Colormap selector
-        controls_layout.addWidget(QLabel("Colormap:"))
-        self._colormap_combo = QComboBox()
-        # Use matplotlib colormap names (more comprehensive)
-        self._colormap_combo.addItems([
-            'viridis', 'plasma', 'inferno', 'magma', 'cividis',
-            'Greys', 'gray', 'hot', 'cool', 'jet', 'turbo',
-            'Blues', 'Reds', 'Greens', 'copper'
-        ])
-        self._colormap_combo.currentTextChanged.connect(self._on_colormap_changed)
-        self._colormap_combo.setFixedWidth(100)
-        controls_layout.addWidget(self._colormap_combo)
+            # Colormap selector
+            controls_layout.addWidget(QLabel("Colormap:"))
+            self._colormap_combo = QComboBox()
+            # Use matplotlib colormap names (more comprehensive)
+            self._colormap_combo.addItems([
+                'viridis', 'plasma', 'inferno', 'magma', 'cividis',
+                'Greys', 'gray', 'hot', 'cool', 'jet', 'turbo',
+                'Blues', 'Reds', 'Greens', 'copper'
+            ])
+            self._colormap_combo.currentTextChanged.connect(self._on_colormap_changed)
+            self._colormap_combo.setFixedWidth(100)
+            controls_layout.addWidget(self._colormap_combo)
+
+            # Auto scale checkbox
+            self._auto_scale_check = QCheckBox("Auto Scale")
+            self._auto_scale_check.setChecked(True)
+            self._auto_scale_check.toggled.connect(self._on_auto_scale_changed)
+            controls_layout.addWidget(self._auto_scale_check)
+
+            # Manual scale controls
+            controls_layout.addWidget(QLabel("Min:"))
+            self._min_spin = QDoubleSpinBox()
+            self._min_spin.setRange(-1e10, 1e10)
+            self._min_spin.setDecimals(2)
+            self._min_spin.setEnabled(False)
+            self._min_spin.valueChanged.connect(self._on_scale_changed)
+            self._min_spin.setFixedWidth(100)
+            controls_layout.addWidget(self._min_spin)
+
+            controls_layout.addWidget(QLabel("Max:"))
+            self._max_spin = QDoubleSpinBox()
+            self._max_spin.setRange(-1e10, 1e10)
+            self._max_spin.setDecimals(2)
+            self._max_spin.setEnabled(False)
+            self._max_spin.valueChanged.connect(self._on_scale_changed)
+            self._max_spin.setFixedWidth(100)
+            controls_layout.addWidget(self._max_spin)
+
+            # Scale bar checkbox
+            self._scalebar_check = QCheckBox("Scale Bar")
+            self._scalebar_check.setChecked(True)
+            self._scalebar_check.toggled.connect(self._on_scalebar_toggled)
+            controls_layout.addWidget(self._scalebar_check)
+
+            controls_layout.addStretch()
+
+            # Data info label
+            self._info_label = QLabel("")
+            self._info_label.setStyleSheet("color: #888;")
+            controls_layout.addWidget(self._info_label)
+
+            layout.addWidget(controls_frame)
+        else:
+            # Still create the widgets but don't add them to layout
+            # This ensures the unified control panel can access them
+            self._colormap_combo = QComboBox()
+            self._colormap_combo.addItems([
+                'viridis', 'plasma', 'inferno', 'magma', 'cividis',
+                'Greys', 'gray', 'hot', 'cool', 'jet', 'turbo',
+                'Blues', 'Reds', 'Greens', 'copper'
+            ])
+            self._colormap_combo.currentTextChanged.connect(self._on_colormap_changed)
+
+            self._auto_scale_check = QCheckBox("Auto Scale")
+            self._auto_scale_check.setChecked(True)
+            self._auto_scale_check.toggled.connect(self._on_auto_scale_changed)
+
+            self._min_spin = QDoubleSpinBox()
+            self._min_spin.setRange(-1e10, 1e10)
+            self._min_spin.setDecimals(2)
+            self._min_spin.setEnabled(False)
+            self._min_spin.valueChanged.connect(self._on_scale_changed)
+
+            self._max_spin = QDoubleSpinBox()
+            self._max_spin.setRange(-1e10, 1e10)
+            self._max_spin.setDecimals(2)
+            self._max_spin.setEnabled(False)
+            self._max_spin.valueChanged.connect(self._on_scale_changed)
+
+            self._scalebar_check = QCheckBox("Scale Bar")
+            self._scalebar_check.setChecked(True)
+            self._scalebar_check.toggled.connect(self._on_scalebar_toggled)
+
+            self._info_label = QLabel("")
 
         # Store current colormap
         self._current_cmap = get_colormap('viridis')
 
-        # Auto scale checkbox
-        self._auto_scale_check = QCheckBox("Auto Scale")
-        self._auto_scale_check.setChecked(True)
-        self._auto_scale_check.toggled.connect(self._on_auto_scale_changed)
-        controls_layout.addWidget(self._auto_scale_check)
-
-        # Manual scale controls
-        controls_layout.addWidget(QLabel("Min:"))
-        self._min_spin = QDoubleSpinBox()
-        self._min_spin.setRange(-1e10, 1e10)
-        self._min_spin.setDecimals(2)
-        self._min_spin.setEnabled(False)
-        self._min_spin.valueChanged.connect(self._on_scale_changed)
-        self._min_spin.setFixedWidth(100)
-        controls_layout.addWidget(self._min_spin)
-
-        controls_layout.addWidget(QLabel("Max:"))
-        self._max_spin = QDoubleSpinBox()
-        self._max_spin.setRange(-1e10, 1e10)
-        self._max_spin.setDecimals(2)
-        self._max_spin.setEnabled(False)
-        self._max_spin.valueChanged.connect(self._on_scale_changed)
-        self._max_spin.setFixedWidth(100)
-        controls_layout.addWidget(self._max_spin)
-
-        # Scale bar checkbox
-        self._scalebar_check = QCheckBox("Scale Bar")
-        self._scalebar_check.setChecked(True)
-        self._scalebar_check.toggled.connect(self._on_scalebar_toggled)
-        controls_layout.addWidget(self._scalebar_check)
-
-        controls_layout.addStretch()
-
-        # Data info label
-        self._info_label = QLabel("")
-        self._info_label.setStyleSheet("color: #888;")
-        controls_layout.addWidget(self._info_label)
-
-        layout.addWidget(controls_frame)
-
         # Frame controls (at bottom)
+        # Always create frame controls but only add to layout if showing controls
         self._frame_controls = FrameControls()
         self._frame_controls.frame_changed.connect(self._on_frame_changed)
-        layout.addWidget(self._frame_controls)
+
+        # Only add to layout if showing controls
+        if self._show_controls:
+            layout.addWidget(self._frame_controls)
+        else:
+            # Hide the frame controls when not showing controls
+            self._frame_controls.setVisible(False)
 
         # Placeholder for empty state
         self._show_placeholder()
 
     def _show_placeholder(self):
         """Show placeholder when no data is loaded."""
-        self._info_label.setText("No data loaded - Open an nhdf file to view")
+        if hasattr(self, '_info_label'):
+            self._info_label.setText("No data loaded - Open an nhdf file to view")
 
     def set_data(self, data: NHDFData):
         """Set the data to display."""
@@ -572,11 +615,13 @@ class DisplayPanel(QWidget):
 
         elif self._data.is_1d_data:
             # TODO: Display as line plot
-            self._info_label.setText("1D data display not yet implemented")
+            if hasattr(self, '_info_label'):
+                self._info_label.setText("1D data display not yet implemented")
 
         else:
             # Multi-dimensional data
-            self._info_label.setText(f"Data shape: {frame_data.shape}")
+            if hasattr(self, '_info_label'):
+                self._info_label.setText(f"Data shape: {frame_data.shape}")
 
     def _auto_scale(self):
         """Auto-scale the display to data range."""
@@ -610,7 +655,7 @@ class DisplayPanel(QWidget):
 
     def _update_info_label(self):
         """Update the info label with current data info."""
-        if self._data is None:
+        if self._data is None or not hasattr(self, '_info_label'):
             return
 
         frame_data = self._data.get_frame(self._current_frame)
@@ -703,3 +748,27 @@ class DisplayPanel(QWidget):
         if hasattr(self, '_min_spin') and hasattr(self, '_max_spin'):
             return (self._min_spin.value(), self._max_spin.value())
         return None
+
+    def set_theme(self, is_dark: bool):
+        """Set the display panel theme."""
+        if is_dark:
+            bg_color = '#1e1e1e'
+            fg_color = '#d4d4d4'
+        else:
+            bg_color = '#ffffff'
+            fg_color = '#000000'
+
+        # Update graphics widget background
+        if hasattr(self, '_graphics_widget'):
+            self._graphics_widget.setBackground(bg_color)
+
+        # Update plot item background
+        if hasattr(self, '_plot_item'):
+            self._plot_item.getViewBox().setBackgroundColor(bg_color)
+
+            # Update axes colors if they are visible
+            for axis in ['left', 'bottom', 'top', 'right']:
+                axis_item = self._plot_item.getAxis(axis)
+                if axis_item:
+                    axis_item.setPen(fg_color)
+                    axis_item.setTextPen(fg_color)

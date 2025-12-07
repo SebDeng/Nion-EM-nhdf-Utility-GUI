@@ -30,12 +30,21 @@ class WorkspaceDisplayPanel(WorkspacePanel):
 
     def _setup_display_panel(self):
         """Set up the display panel within this workspace panel."""
-        # Create display panel
-        self.display_panel = DisplayPanel()
+        # Create display panel without controls (they'll be in unified panel)
+        self.display_panel = DisplayPanel(show_controls=False)
 
         # Set it as content
         self.set_content(self.display_panel)
         self.set_title("Empty Display")
+
+    def set_theme(self, is_dark: bool):
+        """Override to also update display panel theme."""
+        # Call parent to update panel theme
+        super().set_theme(is_dark)
+
+        # Update the display panel's theme
+        if self.display_panel:
+            self.display_panel.set_theme(is_dark)
 
     def set_data(self, data: Optional[NHDFData], file_path: Optional[str] = None):
         """Set the data to display."""

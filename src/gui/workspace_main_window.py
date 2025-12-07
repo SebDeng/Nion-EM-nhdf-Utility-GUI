@@ -22,6 +22,8 @@ from src.gui.metadata_panel import MetadataPanel
 from src.gui.export_dialog import ExportDialog
 from src.gui.workspace import WorkspaceWidget, WorkspacePanel
 from src.gui.workspace_display_panel import WorkspaceDisplayPanel
+from src.gui.unified_control_panel import UnifiedControlPanel
+from src.gui.view_mode_toolbar import ViewModeToolBar
 
 
 class WorkspaceMainWindow(QMainWindow):
@@ -36,6 +38,7 @@ class WorkspaceMainWindow(QMainWindow):
         self._loaded_files: Dict[str, NHDFData] = {}  # path -> data mapping
         self._settings = QSettings("NionUtility", "nhdfGUI")
         self._workspace_layouts: List[Dict] = []  # Saved layouts
+        self._is_dark_mode = True  # Track current theme
 
         self._setup_ui()
         self._setup_menus()
@@ -49,9 +52,27 @@ class WorkspaceMainWindow(QMainWindow):
         self.setWindowTitle("Nion nhdf Utility - Workspace Edition")
         self.setMinimumSize(1400, 900)
 
-        # Create workspace widget as central widget
+        # Create central widget with layout
+        central_widget = QWidget()
+        central_layout = QVBoxLayout(central_widget)
+        central_layout.setContentsMargins(0, 0, 0, 0)
+        central_layout.setSpacing(0)
+
+        # Add view mode toolbar at the top
+        self._view_toolbar = ViewModeToolBar()
+        self._view_toolbar.layout_selected.connect(self._on_view_mode_selected)
+        self._view_toolbar.theme_changed.connect(self._on_theme_changed)
+        central_layout.addWidget(self._view_toolbar)
+
+        # Add unified control panel below the view toolbar
+        self._unified_controls = UnifiedControlPanel()
+        central_layout.addWidget(self._unified_controls)
+
+        # Create workspace widget below the toolbar
         self._workspace = WorkspaceWidget()
-        self.setCentralWidget(self._workspace)
+        central_layout.addWidget(self._workspace, 1)  # Give workspace the stretch factor
+
+        self.setCentralWidget(central_widget)
 
         # Left dock - File Browser
         self._file_browser_dock = QDockWidget("File Browser", self)
@@ -242,6 +263,9 @@ class WorkspaceMainWindow(QMainWindow):
         self._workspace.layout_changed.connect(self._on_layout_changed)
         self._workspace.file_dropped_on_panel.connect(self._on_file_dropped_on_panel)
 
+        # Connect panel selection to unified controls
+        self._workspace.panel_selected.connect(self._update_unified_controls)
+
     def _restore_state(self):
         """Restore window state from settings."""
         geometry = self._settings.value("workspace/geometry")
@@ -298,7 +322,7 @@ class WorkspaceMainWindow(QMainWindow):
                 "id": "2h",
                 "layout": {
                     "type": "splitter",
-                    "orientation": "vertical",
+                    "orientation": "vertical",  # Vertical splitter = side by side panels
                     "sizes": [50, 50],
                     "children": [
                         {"type": "panel", "title": "Panel 1"},
@@ -311,7 +335,7 @@ class WorkspaceMainWindow(QMainWindow):
                 "id": "2v",
                 "layout": {
                     "type": "splitter",
-                    "orientation": "horizontal",
+                    "orientation": "horizontal",  # Horizontal splitter = stacked panels
                     "sizes": [50, 50],
                     "children": [
                         {"type": "panel", "title": "Panel 1"},
@@ -347,6 +371,144 @@ class WorkspaceMainWindow(QMainWindow):
                         }
                     ]
                 }
+            },
+            {
+                "name": "3 Panels Horizontal",
+                "id": "3h",
+                "layout": {
+                    "type": "splitter",
+                    "orientation": "vertical",  # Vertical splitter = side by side panels
+                    "sizes": [33, 34, 33],
+                    "children": [
+                        {"type": "panel", "title": "Panel 1"},
+                        {"type": "panel", "title": "Panel 2"},
+                        {"type": "panel", "title": "Panel 3"}
+                    ]
+                }
+            },
+            {
+                "name": "3 Panels Vertical",
+                "id": "3v",
+                "layout": {
+                    "type": "splitter",
+                    "orientation": "horizontal",  # Horizontal splitter = stacked panels
+                    "sizes": [33, 34, 33],
+                    "children": [
+                        {"type": "panel", "title": "Panel 1"},
+                        {"type": "panel", "title": "Panel 2"},
+                        {"type": "panel", "title": "Panel 3"}
+                    ]
+                }
+            },
+            {
+                "name": "9 Panel Grid",
+                "id": "3x3",
+                "layout": {
+                    "type": "splitter",
+                    "orientation": "vertical",
+                    "sizes": [33, 34, 33],
+                    "children": [
+                        {
+                            "type": "splitter",
+                            "orientation": "horizontal",
+                            "sizes": [33, 34, 33],
+                            "children": [
+                                {"type": "panel", "title": "Panel 1"},
+                                {"type": "panel", "title": "Panel 2"},
+                                {"type": "panel", "title": "Panel 3"}
+                            ]
+                        },
+                        {
+                            "type": "splitter",
+                            "orientation": "horizontal",
+                            "sizes": [33, 34, 33],
+                            "children": [
+                                {"type": "panel", "title": "Panel 4"},
+                                {"type": "panel", "title": "Panel 5"},
+                                {"type": "panel", "title": "Panel 6"}
+                            ]
+                        },
+                        {
+                            "type": "splitter",
+                            "orientation": "horizontal",
+                            "sizes": [33, 34, 33],
+                            "children": [
+                                {"type": "panel", "title": "Panel 7"},
+                                {"type": "panel", "title": "Panel 8"},
+                                {"type": "panel", "title": "Panel 9"}
+                            ]
+                        }
+                    ]
+                }
+            },
+            {
+                "name": "6 Panel Grid (2x3)",
+                "id": "2x3",
+                "layout": {
+                    "type": "splitter",
+                    "orientation": "vertical",
+                    "sizes": [50, 50],
+                    "children": [
+                        {
+                            "type": "splitter",
+                            "orientation": "horizontal",
+                            "sizes": [33, 34, 33],
+                            "children": [
+                                {"type": "panel", "title": "Panel 1"},
+                                {"type": "panel", "title": "Panel 2"},
+                                {"type": "panel", "title": "Panel 3"}
+                            ]
+                        },
+                        {
+                            "type": "splitter",
+                            "orientation": "horizontal",
+                            "sizes": [33, 34, 33],
+                            "children": [
+                                {"type": "panel", "title": "Panel 4"},
+                                {"type": "panel", "title": "Panel 5"},
+                                {"type": "panel", "title": "Panel 6"}
+                            ]
+                        }
+                    ]
+                }
+            },
+            {
+                "name": "6 Panel Grid (3x2)",
+                "id": "3x2",
+                "layout": {
+                    "type": "splitter",
+                    "orientation": "vertical",
+                    "sizes": [33, 34, 33],
+                    "children": [
+                        {
+                            "type": "splitter",
+                            "orientation": "horizontal",
+                            "sizes": [50, 50],
+                            "children": [
+                                {"type": "panel", "title": "Panel 1"},
+                                {"type": "panel", "title": "Panel 2"}
+                            ]
+                        },
+                        {
+                            "type": "splitter",
+                            "orientation": "horizontal",
+                            "sizes": [50, 50],
+                            "children": [
+                                {"type": "panel", "title": "Panel 3"},
+                                {"type": "panel", "title": "Panel 4"}
+                            ]
+                        },
+                        {
+                            "type": "splitter",
+                            "orientation": "horizontal",
+                            "sizes": [50, 50],
+                            "children": [
+                                {"type": "panel", "title": "Panel 5"},
+                                {"type": "panel", "title": "Panel 6"}
+                            ]
+                        }
+                    ]
+                }
             }
         ]
 
@@ -364,6 +526,270 @@ class WorkspaceMainWindow(QMainWindow):
                 self._workspace.from_dict(layout["layout"])
                 self._workspace.layout_changed.emit()
                 break
+
+    def _on_view_mode_selected(self, layout_id: str):
+        """Handle view mode selection from toolbar."""
+        # Map toolbar layout IDs to preset IDs
+        layout_map = {
+            "single": "single",
+            "h2": "2h",
+            "v2": "2v",
+            "grid4": "2x2",
+            "h3": "3h",
+            "v3": "3v",
+            "grid9": "3x3",
+            "grid6": "2x3",
+            "grid6_v": "3x2",
+        }
+
+        # Check if it's a predefined layout
+        if layout_id in layout_map:
+            preset_id = layout_map[layout_id]
+            self._apply_layout_preset(preset_id)
+        else:
+            # Handle custom layouts (L-shape, T-shape, etc.)
+            self._apply_custom_layout(layout_id)
+
+    def _apply_custom_layout(self, layout_id: str):
+        """Apply a custom layout pattern."""
+        # For now, just create a basic layout
+        # TODO: Implement custom layout patterns
+        if layout_id == "l_shape":
+            # Create L-shaped layout
+            self._apply_layout_preset("2x2")  # Fallback to 2x2 for now
+        elif layout_id == "t_shape":
+            # Create T-shaped layout
+            self._apply_layout_preset("2x2")  # Fallback to 2x2 for now
+        elif layout_id == "h_shape":
+            # Create H-shaped layout
+            self._apply_layout_preset("2x2")  # Fallback to 2x2 for now
+
+    def _on_theme_changed(self, is_dark: bool):
+        """Handle theme change from toolbar."""
+        from PySide6.QtGui import QPalette, QColor
+        app = QApplication.instance()
+
+        self._is_dark_mode = is_dark
+
+        # Update the view mode toolbar's theme (no-op if it's the source of the change)
+        if hasattr(self, '_view_toolbar'):
+            self._view_toolbar.set_theme(is_dark)
+
+        if is_dark:
+            # Apply dark theme
+            from main import apply_dark_theme
+            apply_dark_theme(app)
+            # Update pyqtgraph graphics widgets for dark mode
+            self._update_pyqtgraph_theme(is_dark=True)
+        else:
+            # Apply light theme
+            palette = QPalette()
+
+            # Light theme colors
+            white = QColor(255, 255, 255)
+            light_gray = QColor(240, 240, 240)
+            gray = QColor(180, 180, 180)
+            dark_gray = QColor(100, 100, 100)
+            black = QColor(0, 0, 0)
+            blue = QColor(42, 130, 218)
+
+            # Set palette colors for light theme
+            palette.setColor(QPalette.Window, light_gray)
+            palette.setColor(QPalette.WindowText, black)
+            palette.setColor(QPalette.Base, white)
+            palette.setColor(QPalette.AlternateBase, light_gray)
+            palette.setColor(QPalette.ToolTipBase, light_gray)
+            palette.setColor(QPalette.ToolTipText, black)
+            palette.setColor(QPalette.Text, black)
+            palette.setColor(QPalette.Button, light_gray)
+            palette.setColor(QPalette.ButtonText, black)
+            palette.setColor(QPalette.BrightText, Qt.red)
+            palette.setColor(QPalette.Link, blue)
+            palette.setColor(QPalette.Highlight, blue)
+            palette.setColor(QPalette.HighlightedText, white)
+
+            # Disabled colors
+            palette.setColor(QPalette.Disabled, QPalette.WindowText, gray)
+            palette.setColor(QPalette.Disabled, QPalette.Text, gray)
+            palette.setColor(QPalette.Disabled, QPalette.ButtonText, gray)
+
+            app.setPalette(palette)
+
+            # Light theme stylesheet
+            app.setStyleSheet("""
+                QWidget {
+                    background-color: #f0f0f0;
+                    color: #000000;
+                }
+                QFrame {
+                    background-color: #f0f0f0;
+                    color: #000000;
+                }
+                QToolTip {
+                    color: #000000;
+                    background-color: #f0f0f0;
+                    border: 1px solid #b4b4b4;
+                    padding: 4px;
+                }
+                QMenuBar {
+                    background-color: #f0f0f0;
+                    padding: 2px;
+                }
+                QMenuBar::item:selected {
+                    background-color: #d0d0d0;
+                }
+                QMenu {
+                    background-color: #f0f0f0;
+                    border: 1px solid #b4b4b4;
+                }
+                QMenu::item:selected {
+                    background-color: #2a82da;
+                    color: white;
+                }
+                QTreeView {
+                    background-color: white;
+                    alternate-background-color: #f5f5f5;
+                    border: 1px solid #b4b4b4;
+                }
+                QTreeView::item:hover {
+                    background-color: #e0e0e0;
+                }
+                QTreeView::item:selected {
+                    background-color: #2a82da;
+                    color: white;
+                }
+                QDockWidget {
+                    background-color: #f0f0f0;
+                    color: #000000;
+                }
+                QDockWidget::title {
+                    background-color: #e0e0e0;
+                    padding: 6px;
+                    color: #000000;
+                }
+                QStatusBar {
+                    background-color: #f0f0f0;
+                    border-top: 1px solid #b4b4b4;
+                    color: #000000;
+                }
+                QHeaderView::section {
+                    background-color: #e0e0e0;
+                    padding: 4px;
+                    border: 1px solid #b4b4b4;
+                    color: #000000;
+                }
+                QSlider::groove:horizontal {
+                    border: 1px solid #b4b4b4;
+                    height: 6px;
+                    background: #ffffff;
+                    border-radius: 3px;
+                }
+                QSlider::handle:horizontal {
+                    background: #2a82da;
+                    border: 1px solid #2a82da;
+                    width: 14px;
+                    margin: -4px 0;
+                    border-radius: 7px;
+                }
+                QSlider::handle:horizontal:hover {
+                    background: #3a92ea;
+                }
+                QSpinBox, QDoubleSpinBox {
+                    background-color: white;
+                    border: 1px solid #b4b4b4;
+                    padding: 2px;
+                    color: #000000;
+                }
+                QComboBox {
+                    background-color: white;
+                    border: 1px solid #b4b4b4;
+                    padding: 4px;
+                    color: #000000;
+                }
+                QComboBox::drop-down {
+                    border: none;
+                    width: 20px;
+                }
+                QLineEdit {
+                    background-color: white;
+                    border: 1px solid #b4b4b4;
+                    padding: 4px;
+                    color: #000000;
+                }
+                QPushButton {
+                    background-color: #e0e0e0;
+                    border: 1px solid #b4b4b4;
+                    padding: 6px 12px;
+                    border-radius: 3px;
+                    color: #000000;
+                }
+                QPushButton:hover {
+                    background-color: #d0d0d0;
+                }
+                QPushButton:pressed {
+                    background-color: #2a82da;
+                    color: white;
+                }
+                QPushButton:checked {
+                    background-color: #2a82da;
+                    color: white;
+                }
+                QCheckBox {
+                    color: #000000;
+                }
+                QCheckBox::indicator {
+                    width: 16px;
+                    height: 16px;
+                }
+                QGroupBox {
+                    border: 1px solid #b4b4b4;
+                    border-radius: 4px;
+                    margin-top: 8px;
+                    padding-top: 8px;
+                    color: #000000;
+                }
+                QGroupBox::title {
+                    subcontrol-origin: margin;
+                    subcontrol-position: top left;
+                    padding: 0 4px;
+                    color: #000000;
+                }
+                QLabel {
+                    color: #000000;
+                }
+                QSplitter {
+                    background-color: #f0f0f0;
+                }
+                QSplitter::handle {
+                    background-color: #d0d0d0;
+                }
+                QGraphicsView {
+                    background-color: white;
+                    border: 1px solid #b4b4b4;
+                }
+                /* Workspace panels */
+                WorkspacePanel {
+                    background-color: white;
+                }
+            """)
+
+            # Also update pyqtgraph graphics widgets for light mode
+            self._update_pyqtgraph_theme(is_dark=False)
+
+    def _update_pyqtgraph_theme(self, is_dark: bool):
+        """Update pyqtgraph widgets for the current theme."""
+        import pyqtgraph as pg
+
+        # Set global pyqtgraph options
+        if is_dark:
+            pg.setConfigOption('background', '#1e1e1e')
+            pg.setConfigOption('foreground', '#d4d4d4')
+        else:
+            pg.setConfigOption('background', 'w')
+            pg.setConfigOption('foreground', 'k')
+
+        # Update all workspace panels through the workspace widget
+        self._workspace.set_theme(is_dark)
 
     def _on_save_layout(self):
         """Save current workspace layout."""
@@ -421,6 +847,16 @@ class WorkspaceMainWindow(QMainWindow):
         if isinstance(panel, WorkspaceDisplayPanel):
             panel.data_loaded.connect(lambda data: self._on_data_loaded_in_panel(panel, data))
 
+            # Apply current theme to new panel
+            if hasattr(panel, 'set_theme'):
+                panel.set_theme(self._is_dark_mode)
+
+            if hasattr(panel, 'display_panel') and panel.display_panel:
+                display = panel.display_panel
+                if hasattr(display, '_graphics_widget'):
+                    bg_color = 'k' if self._is_dark_mode else 'w'
+                    display._graphics_widget.setBackground(bg_color)
+
     def _on_panel_removed(self, panel: WorkspacePanel):
         """Handle panel removal."""
         self._update_export_actions()
@@ -435,6 +871,13 @@ class WorkspaceMainWindow(QMainWindow):
             self._metadata_panel.clear()
 
         self._update_export_actions()
+
+    def _update_unified_controls(self, panel: WorkspacePanel):
+        """Update unified control panel for the selected panel."""
+        if isinstance(panel, WorkspaceDisplayPanel):
+            self._unified_controls.set_current_panel(panel)
+        else:
+            self._unified_controls.set_current_panel(None)
 
     def _on_layout_changed(self):
         """Handle workspace layout change."""
@@ -538,6 +981,9 @@ class WorkspaceMainWindow(QMainWindow):
             new_panel.file_dropped.connect(self._workspace._handle_file_dropped)
             new_panel.data_loaded.connect(lambda data: self._on_data_loaded_in_panel(new_panel, data))
 
+            # Apply current theme to the new panel
+            new_panel.set_theme(self._is_dark_mode)
+
             # Get parent and index before modifying
             try:
                 parent = panel.parent()
@@ -567,9 +1013,6 @@ class WorkspaceMainWindow(QMainWindow):
                 # Delete old panel after all references are updated
                 panel.deleteLater()
 
-                # Now select the new panel
-                self._workspace._select_panel(new_panel)
-
                 # Use the new panel for loading
                 panel = new_panel
             else:
@@ -590,6 +1033,15 @@ class WorkspaceMainWindow(QMainWindow):
                 data = self._loaded_files[str_path]
 
             panel.set_data(data, str(path))
+
+            # Select the panel (this will trigger updates)
+            self._workspace._select_panel(panel)
+
+            # Force update of unified controls
+            self._update_unified_controls(panel)
+            # Also update metadata panel
+            self._metadata_panel.set_data(data)
+            self._statusbar.showMessage(data.get_summary())
 
         except Exception as e:
             QMessageBox.critical(

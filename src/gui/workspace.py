@@ -59,6 +59,7 @@ class WorkspacePanel(QWidget):
         self.panel_id = panel_id or str(uuid.uuid4())
         self.content_widget: Optional[QWidget] = None
         self._selected = False
+        self._is_dark_theme = True  # Default to dark theme
 
         # Enable drag and drop
         self.setAcceptDrops(True)
@@ -72,16 +73,16 @@ class WorkspacePanel(QWidget):
         layout.setSpacing(0)
 
         # Header bar
-        header = QWidget()
-        header.setMaximumHeight(30)
-        header.setStyleSheet("""
+        self.header = QWidget()
+        self.header.setMaximumHeight(30)
+        self.header.setStyleSheet("""
             QWidget {
                 background-color: #2b2b2b;
                 border-bottom: 1px solid #3c3c3c;
             }
         """)
 
-        header_layout = QHBoxLayout(header)
+        header_layout = QHBoxLayout(self.header)
         header_layout.setContentsMargins(4, 2, 4, 2)
 
         # Title label
@@ -111,7 +112,7 @@ class WorkspacePanel(QWidget):
         close_btn.clicked.connect(lambda: self.close_requested.emit(self))
         header_layout.addWidget(close_btn)
 
-        layout.addWidget(header)
+        layout.addWidget(self.header)
 
         # Content area
         self.content_area = QWidget()
@@ -152,23 +153,130 @@ class WorkspacePanel(QWidget):
         """Set the panel title."""
         self.title_label.setText(title)
 
+    def set_theme(self, is_dark: bool):
+        """Update panel theme."""
+        self._is_dark_theme = is_dark  # Store theme state
+
+        if is_dark:
+            # Dark theme
+            self.header.setStyleSheet("""
+                QWidget {
+                    background-color: #2b2b2b;
+                    border-bottom: 1px solid #3c3c3c;
+                }
+            """)
+            self.title_label.setStyleSheet("color: #cccccc;")
+            # Update content area based on selection state
+            if self._selected:
+                self.content_area.setStyleSheet("""
+                    QWidget {
+                        background-color: #1e1e1e;
+                        border: 2px solid #0d7377;
+                    }
+                """)
+            else:
+                self.content_area.setStyleSheet("""
+                    QWidget {
+                        background-color: #1e1e1e;
+                        border: 1px solid #3c3c3c;
+                    }
+                """)
+        else:
+            # Light theme
+            self.header.setStyleSheet("""
+                QWidget {
+                    background-color: #e0e0e0;
+                    border-bottom: 1px solid #b4b4b4;
+                }
+            """)
+            self.title_label.setStyleSheet("color: #333333;")
+            # Update content area based on selection state
+            if self._selected:
+                self.content_area.setStyleSheet("""
+                    QWidget {
+                        background-color: #ffffff;
+                        border: 2px solid #0d7377;
+                    }
+                """)
+            else:
+                self.content_area.setStyleSheet("""
+                    QWidget {
+                        background-color: #ffffff;
+                        border: 1px solid #b4b4b4;
+                    }
+                """)
+
+        # Update pyqtgraph widgets if they exist in content
+        if self.content_widget:
+            # Import here to avoid circular dependencies
+            try:
+                import pyqtgraph as pg
+                from pyqtgraph import ImageView
+
+                # Configure pyqtgraph colors
+                if is_dark:
+                    pg.setConfigOption('background', '#1e1e1e')
+                    pg.setConfigOption('foreground', '#d4d4d4')
+                else:
+                    pg.setConfigOption('background', 'w')
+                    pg.setConfigOption('foreground', 'k')
+
+                # Find and update any ImageView widgets
+                self._update_child_image_views(self.content_widget, is_dark)
+            except ImportError:
+                pass
+
+    def _update_child_image_views(self, widget, is_dark: bool):
+        """Recursively update ImageView widgets."""
+        from pyqtgraph import ImageView
+
+        if isinstance(widget, ImageView):
+            # Update the ImageView's background
+            if is_dark:
+                widget.setBackgroundColor('#1e1e1e')
+            else:
+                widget.setBackgroundColor('#ffffff')
+
+        # Recursively check children
+        for child in widget.findChildren(QWidget):
+            self._update_child_image_views(child, is_dark)
+
     def set_selected(self, selected: bool):
         """Mark this panel as selected/active."""
         self._selected = selected
+        # Use stored theme state, default to dark if not set
+        is_dark = getattr(self, '_is_dark_theme', True)
+
         if selected:
-            self.content_area.setStyleSheet("""
-                QWidget {
-                    background-color: #1e1e1e;
-                    border: 2px solid #0d7377;
-                }
-            """)
+            if is_dark:
+                self.content_area.setStyleSheet("""
+                    QWidget {
+                        background-color: #1e1e1e;
+                        border: 2px solid #0d7377;
+                    }
+                """)
+            else:
+                self.content_area.setStyleSheet("""
+                    QWidget {
+                        background-color: #ffffff;
+                        border: 2px solid #0d7377;
+                    }
+                """)
         else:
-            self.content_area.setStyleSheet("""
-                QWidget {
-                    background-color: #1e1e1e;
-                    border: 1px solid #3c3c3c;
-                }
-            """)
+            if is_dark:
+                self.content_area.setStyleSheet("""
+                    QWidget {
+                        background-color: #1e1e1e;
+                        border: 1px solid #3c3c3c;
+                    }
+                """)
+            else:
+                self.content_area.setStyleSheet("""
+                    QWidget {
+                        background-color: #ffffff;
+                        border: 1px solid #b4b4b4;
+                    }
+                """)
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize panel to dictionary."""
@@ -190,6 +298,7 @@ class WorkspacePanel(QWidget):
     def dragEnterEvent(self, event: QDragEnterEvent):
         """Handle drag enter events."""
         mime_data = event.mimeData()
+        is_dark = getattr(self, '_is_dark_theme', True)
 
         # Check if the drag contains files
         if mime_data.hasUrls():
@@ -201,13 +310,20 @@ class WorkspacePanel(QWidget):
                     if file_path.lower().endswith('.nhdf'):
                         event.acceptProposedAction()
                         # Visual feedback - highlight the panel
-                        self.content_area.setStyleSheet("""
-                            QWidget {
-                                background-color: #1e1e1e;
-                                border: 2px solid #0d7377;
-                                background-color: rgba(13, 115, 119, 0.1);
-                            }
-                        """)
+                        if is_dark:
+                            self.content_area.setStyleSheet("""
+                                QWidget {
+                                    background-color: rgba(13, 115, 119, 0.15);
+                                    border: 2px solid #0d7377;
+                                }
+                            """)
+                        else:
+                            self.content_area.setStyleSheet("""
+                                QWidget {
+                                    background-color: rgba(42, 130, 218, 0.1);
+                                    border: 2px solid #2a82da;
+                                }
+                            """)
                         return
 
         # Also accept internal file paths (from file browser)
@@ -215,13 +331,20 @@ class WorkspacePanel(QWidget):
             text = mime_data.text()
             if text.lower().endswith('.nhdf'):
                 event.acceptProposedAction()
-                self.content_area.setStyleSheet("""
-                    QWidget {
-                        background-color: #1e1e1e;
-                        border: 2px solid #0d7377;
-                        background-color: rgba(13, 115, 119, 0.1);
-                    }
-                """)
+                if is_dark:
+                    self.content_area.setStyleSheet("""
+                        QWidget {
+                            background-color: rgba(13, 115, 119, 0.15);
+                            border: 2px solid #0d7377;
+                        }
+                    """)
+                else:
+                    self.content_area.setStyleSheet("""
+                        QWidget {
+                            background-color: rgba(42, 130, 218, 0.1);
+                            border: 2px solid #2a82da;
+                        }
+                    """)
                 return
 
         event.ignore()
@@ -251,24 +374,43 @@ class WorkspacePanel(QWidget):
     def dragLeaveEvent(self, event):
         """Handle drag leave events."""
         # Reset visual feedback
+        is_dark = getattr(self, '_is_dark_theme', True)
+
         if self._selected:
-            self.content_area.setStyleSheet("""
-                QWidget {
-                    background-color: #1e1e1e;
-                    border: 2px solid #0d7377;
-                }
-            """)
+            if is_dark:
+                self.content_area.setStyleSheet("""
+                    QWidget {
+                        background-color: #1e1e1e;
+                        border: 2px solid #0d7377;
+                    }
+                """)
+            else:
+                self.content_area.setStyleSheet("""
+                    QWidget {
+                        background-color: #ffffff;
+                        border: 2px solid #0d7377;
+                    }
+                """)
         else:
-            self.content_area.setStyleSheet("""
-                QWidget {
-                    background-color: #1e1e1e;
-                    border: 1px solid #3c3c3c;
-                }
-            """)
+            if is_dark:
+                self.content_area.setStyleSheet("""
+                    QWidget {
+                        background-color: #1e1e1e;
+                        border: 1px solid #3c3c3c;
+                    }
+                """)
+            else:
+                self.content_area.setStyleSheet("""
+                    QWidget {
+                        background-color: #ffffff;
+                        border: 1px solid #b4b4b4;
+                    }
+                """)
 
     def dropEvent(self, event: QDropEvent):
         """Handle drop events."""
         mime_data = event.mimeData()
+        is_dark = getattr(self, '_is_dark_theme', True)
 
         # Handle file URLs
         if mime_data.hasUrls():
@@ -280,19 +422,35 @@ class WorkspacePanel(QWidget):
                         event.acceptProposedAction()
                         # Reset visual feedback
                         if self._selected:
-                            self.content_area.setStyleSheet("""
-                                QWidget {
-                                    background-color: #1e1e1e;
-                                    border: 2px solid #0d7377;
-                                }
-                            """)
+                            if is_dark:
+                                self.content_area.setStyleSheet("""
+                                    QWidget {
+                                        background-color: #1e1e1e;
+                                        border: 2px solid #0d7377;
+                                    }
+                                """)
+                            else:
+                                self.content_area.setStyleSheet("""
+                                    QWidget {
+                                        background-color: #ffffff;
+                                        border: 2px solid #0d7377;
+                                    }
+                                """)
                         else:
-                            self.content_area.setStyleSheet("""
-                                QWidget {
-                                    background-color: #1e1e1e;
-                                    border: 1px solid #3c3c3c;
-                                }
-                            """)
+                            if is_dark:
+                                self.content_area.setStyleSheet("""
+                                    QWidget {
+                                        background-color: #1e1e1e;
+                                        border: 1px solid #3c3c3c;
+                                    }
+                                """)
+                            else:
+                                self.content_area.setStyleSheet("""
+                                    QWidget {
+                                        background-color: #ffffff;
+                                        border: 1px solid #b4b4b4;
+                                    }
+                                """)
                         # Emit signal with file path
                         self.file_dropped.emit(self, file_path)
                         return
@@ -304,19 +462,35 @@ class WorkspacePanel(QWidget):
                 event.acceptProposedAction()
                 # Reset visual feedback
                 if self._selected:
-                    self.content_area.setStyleSheet("""
-                        QWidget {
-                            background-color: #1e1e1e;
-                            border: 2px solid #0d7377;
-                        }
-                    """)
+                    if is_dark:
+                        self.content_area.setStyleSheet("""
+                            QWidget {
+                                background-color: #1e1e1e;
+                                border: 2px solid #0d7377;
+                            }
+                        """)
+                    else:
+                        self.content_area.setStyleSheet("""
+                            QWidget {
+                                background-color: #ffffff;
+                                border: 2px solid #0d7377;
+                            }
+                        """)
                 else:
-                    self.content_area.setStyleSheet("""
-                        QWidget {
-                            background-color: #1e1e1e;
-                            border: 1px solid #3c3c3c;
-                        }
-                    """)
+                    if is_dark:
+                        self.content_area.setStyleSheet("""
+                            QWidget {
+                                background-color: #1e1e1e;
+                                border: 1px solid #3c3c3c;
+                            }
+                        """)
+                    else:
+                        self.content_area.setStyleSheet("""
+                            QWidget {
+                                background-color: #ffffff;
+                                border: 1px solid #b4b4b4;
+                            }
+                        """)
                 # Emit signal with file path
                 self.file_dropped.emit(self, file_path)
                 return
@@ -375,6 +549,7 @@ class WorkspaceWidget(QWidget):
         self.panels: List[WorkspacePanel] = []
         self.selected_panel: Optional[WorkspacePanel] = None
         self.root_splitter: Optional[QSplitter] = None
+        self._is_dark_theme = True  # Store current theme state
 
         self._setup_ui()
         self._create_initial_panel()
@@ -391,6 +566,9 @@ class WorkspaceWidget(QWidget):
         panel.close_requested.connect(self._handle_panel_close)
         panel.split_requested.connect(self._handle_panel_split)
         panel.file_dropped.connect(self._handle_file_dropped)
+
+        # Apply current theme
+        panel.set_theme(self._is_dark_theme)
 
         self.panels.append(panel)
         self.layout.addWidget(panel)
@@ -459,6 +637,9 @@ class WorkspaceWidget(QWidget):
         new_panel.file_dropped.connect(self._handle_file_dropped)
         new_panel.set_title("Empty Panel")
 
+        # Apply current theme to the new panel
+        new_panel.set_theme(self._is_dark_theme)
+
         # Create splitter
         if direction == "horizontal":
             splitter = QSplitter(Qt.Vertical)
@@ -499,6 +680,12 @@ class WorkspaceWidget(QWidget):
         """Handle file dropped on panel."""
         # Propagate to parent window for handling
         self.file_dropped_on_panel.emit(panel, file_path)
+
+    def set_theme(self, is_dark: bool):
+        """Update theme for all panels."""
+        self._is_dark_theme = is_dark
+        for panel in self.panels:
+            panel.set_theme(is_dark)
 
     def add_panel_at_position(self, position: str = "right"):
         """Add a new panel at the specified position relative to selected panel."""
@@ -567,11 +754,21 @@ class WorkspaceWidget(QWidget):
 
     def _reconstruct_widget(self, data: Dict[str, Any]) -> Optional[QWidget]:
         """Reconstruct a widget from dictionary data."""
-        if data.get('type') == 'panel':
-            panel = WorkspacePanel.from_dict(data)
+        if data.get('type') == 'panel' or data.get('type') == 'display_panel':
+            # Check if it's a display panel or regular panel
+            if data.get('type') == 'display_panel':
+                from src.gui.workspace_display_panel import WorkspaceDisplayPanel
+                panel = WorkspaceDisplayPanel.from_dict(data)
+            else:
+                panel = WorkspacePanel.from_dict(data)
+
             panel.close_requested.connect(self._handle_panel_close)
             panel.split_requested.connect(self._handle_panel_split)
             panel.file_dropped.connect(self._handle_file_dropped)
+
+            # Apply current theme
+            panel.set_theme(self._is_dark_theme)
+
             self.panels.append(panel)
             if data.get('selected'):
                 self._select_panel(panel)
