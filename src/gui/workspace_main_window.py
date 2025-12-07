@@ -74,6 +74,7 @@ class WorkspaceMainWindow(QMainWindow):
         # Add analysis toolbar below unified controls (only visible in preview mode)
         self._analysis_toolbar = AnalysisToolBar()
         self._analysis_toolbar.tool_changed.connect(self._on_analysis_tool_changed)
+        self._analysis_toolbar.clear_requested.connect(self._on_clear_analysis)
         central_layout.addWidget(self._analysis_toolbar)
 
         # Create mode manager with tabbed workspace/processing
@@ -827,9 +828,39 @@ class WorkspaceMainWindow(QMainWindow):
         if tool != AnalysisTool.NONE:
             self._analysis_dock.setVisible(True)
 
-        # TODO: Connect to display panels to activate the tool
-        # For now, just print the selected tool
-        print(f"Analysis tool selected: {tool.value}")
+        # Propagate tool change to all display panels in the workspace
+        if self._workspace:
+            for panel in self._workspace.panels.values():
+                if isinstance(panel, WorkspaceDisplayPanel):
+                    if hasattr(panel, 'display_panel') and panel.display_panel:
+                        panel.display_panel.set_analysis_tool(tool.value)
+
+    def _on_clear_analysis(self):
+        """Handle clear analysis request."""
+        # Clear analysis panel
+        self._analysis_panel.clear_all()
+
+        # Clear overlays in all display panels
+        if self._workspace:
+            for panel in self._workspace.panels.values():
+                if isinstance(panel, WorkspaceDisplayPanel):
+                    if hasattr(panel, 'display_panel') and panel.display_panel:
+                        panel.display_panel.clear_analysis_overlays()
+
+    def _on_line_profile_created(self, profile_data):
+        """Handle line profile creation from display panels."""
+        from src.gui.line_profile_overlay import LineProfileData
+
+        if isinstance(profile_data, LineProfileData):
+            # Add to analysis panel
+            data_dict = {
+                'start': profile_data.start_point,
+                'end': profile_data.end_point,
+                'values': profile_data.values,
+                'distance': profile_data.distances[-1] if len(profile_data.distances) > 0 else 0,
+                'unit': profile_data.unit
+            }
+            self._analysis_panel.add_line_profile(profile_data.profile_id, data_dict)
 
     def _on_save_layout(self):
         """Save current workspace layout."""
@@ -896,6 +927,9 @@ class WorkspaceMainWindow(QMainWindow):
                 if hasattr(display, '_graphics_widget'):
                     bg_color = 'k' if self._is_dark_mode else 'w'
                     display._graphics_widget.setBackground(bg_color)
+
+                # Connect line profile signals to analysis panel
+                display.line_profile_created.connect(self._on_line_profile_created)
 
     def _on_panel_removed(self, panel: WorkspacePanel):
         """Handle panel removal."""

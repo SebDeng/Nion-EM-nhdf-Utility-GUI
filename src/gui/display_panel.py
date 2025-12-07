@@ -18,6 +18,7 @@ from pyqtgraph import functions as fn
 from matplotlib import colormaps as mpl_colormaps
 
 from src.core.nhdf_reader import NHDFData
+from src.gui.line_profile_overlay import LineProfileOverlay, LineProfileData
 
 
 class ScaleBarItem(pg.GraphicsObject):
@@ -413,12 +414,14 @@ class DisplayPanel(QWidget):
     """Panel for displaying nhdf data with frame navigation."""
 
     frame_changed = Signal(int)
+    line_profile_created = Signal(LineProfileData)  # Emitted when a line profile is created
 
     def __init__(self, parent=None, show_controls=True):
         super().__init__(parent)
         self._data: Optional[NHDFData] = None
         self._current_frame = 0
         self._show_controls = show_controls
+        self._line_profile_overlay: Optional[LineProfileOverlay] = None
 
         self._setup_ui()
 
@@ -446,6 +449,10 @@ class DisplayPanel(QWidget):
         # Scale bar
         self._scale_bar = ScaleBarItem()
         self._plot_item.addItem(self._scale_bar)
+
+        # Line profile overlay
+        self._line_profile_overlay = LineProfileOverlay(self._plot_item, self._image_item)
+        self._line_profile_overlay.profile_created.connect(self.line_profile_created.emit)
 
         # Color bar
         self._colorbar = pg.ColorBarItem(
@@ -772,3 +779,16 @@ class DisplayPanel(QWidget):
                 if axis_item:
                     axis_item.setPen(fg_color)
                     axis_item.setTextPen(fg_color)
+
+    def set_analysis_tool(self, tool_name: str):
+        """Set the active analysis tool."""
+        if self._line_profile_overlay:
+            if tool_name == "line_profile":
+                self._line_profile_overlay.set_tool_active(True)
+            else:
+                self._line_profile_overlay.set_tool_active(False)
+
+    def clear_analysis_overlays(self):
+        """Clear all analysis overlays."""
+        if self._line_profile_overlay:
+            self._line_profile_overlay.clear_all()

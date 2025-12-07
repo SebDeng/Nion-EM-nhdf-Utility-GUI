@@ -22,6 +22,7 @@ class AnalysisToolBar(QToolBar):
 
     # Signals
     tool_changed = Signal(AnalysisTool)  # Emitted when tool selection changes
+    clear_requested = Signal()  # Emitted when clear button is clicked
 
     def __init__(self, parent=None):
         super().__init__("Analysis Tools", parent)
@@ -78,8 +79,7 @@ class AnalysisToolBar(QToolBar):
 
     def _on_clear_all(self):
         """Clear all analysis overlays."""
-        # This will be connected to display panels
-        pass
+        self.clear_requested.emit()
 
     def get_current_tool(self) -> AnalysisTool:
         """Get the currently selected tool."""
