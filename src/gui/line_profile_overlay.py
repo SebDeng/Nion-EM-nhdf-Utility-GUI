@@ -44,6 +44,7 @@ class LineProfileOverlay(QObject):
         # Drawing state
         self.is_drawing = False
         self.start_pos: Optional[QPointF] = None
+        self.start_marker = None
 
         # Tool state
         self.tool_active = False
@@ -60,33 +61,38 @@ class LineProfileOverlay(QObject):
 
     def _connect_events(self):
         """Connect mouse events for drawing."""
-        # Connect to the ViewBox mouse events
-        self.view_box.scene().sigMouseClicked.connect(self._on_mouse_clicked)
+        # Connect to the ViewBox mouse press events directly
+        self.view_box.mouseClickEvent = self._mouse_click_event
 
     def _disconnect_events(self):
         """Disconnect mouse events."""
-        try:
-            self.view_box.scene().sigMouseClicked.disconnect(self._on_mouse_clicked)
-        except:
-            pass
+        # Restore default mouse behavior
+        self.view_box.mouseClickEvent = pg.ViewBox.mouseClickEvent
 
-    def _on_mouse_clicked(self, event):
-        """Handle mouse click events."""
+    def _mouse_click_event(self, event):
+        """Handle mouse click events in the ViewBox."""
         if not self.tool_active or self.image_item.image is None:
+            # Call the parent implementation if tool not active
+            pg.ViewBox.mouseClickEvent(self.view_box, event)
             return
 
-        # Get position in image coordinates
+        # Only handle left clicks
+        if event.button() != 1:  # Not left button
+            pg.ViewBox.mouseClickEvent(self.view_box, event)
+            return
+
+        # Get position in view coordinates
         pos = self.view_box.mapSceneToView(event.scenePos())
 
-        if event.button() == 1:  # Left click
-            if not self.is_drawing:
-                # Start drawing a new line
-                self.start_drawing(pos)
-            else:
-                # Complete the line
-                self.complete_drawing(pos)
+        if not self.is_drawing:
+            # Start drawing a new line
+            self.start_drawing(pos)
+        else:
+            # Complete the line
+            self.complete_drawing(pos)
 
-            event.accept()
+        # Accept the event to prevent further processing
+        event.accept()
 
     def start_drawing(self, pos: QPointF):
         """Start drawing a new line profile."""
@@ -98,10 +104,24 @@ class LineProfileOverlay(QObject):
             self.plot_item.removeItem(self.line_roi)
             self.line_roi = None
 
+        # Add a temporary marker to show where the line starts
+        self.start_marker = pg.ScatterPlotItem(
+            pos=[pos],
+            size=10,
+            pen=pg.mkPen('yellow', width=2),
+            brush=pg.mkBrush('yellow')
+        )
+        self.plot_item.addItem(self.start_marker)
+
     def complete_drawing(self, end_pos: QPointF):
         """Complete drawing and create the line profile."""
         if not self.is_drawing or self.start_pos is None:
             return
+
+        # Remove the temporary start marker
+        if self.start_marker is not None:
+            self.plot_item.removeItem(self.start_marker)
+            self.start_marker = None
 
         # Create LineSegmentROI
         self.line_roi = pg.LineSegmentROI(
@@ -130,6 +150,11 @@ class LineProfileOverlay(QObject):
         """Cancel current drawing operation."""
         self.is_drawing = False
         self.start_pos = None
+
+        # Remove the temporary start marker if it exists
+        if self.start_marker is not None:
+            self.plot_item.removeItem(self.start_marker)
+            self.start_marker = None
 
     def _on_line_changed(self):
         """Handle changes to the line ROI."""
