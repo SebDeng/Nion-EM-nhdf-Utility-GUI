@@ -2,7 +2,7 @@
 Line profile overlay for display panels.
 """
 
-from PySide6.QtCore import Signal, QObject, QPointF
+from PySide6.QtCore import Signal, QObject, QPointF, Qt
 from PySide6.QtGui import QPen, QColor
 import pyqtgraph as pg
 import numpy as np
@@ -51,14 +51,10 @@ class LineProfileOverlay(QObject):
 
     def set_tool_active(self, active: bool):
         """Enable or disable the line profile tool."""
-        print(f"[DEBUG] LineProfileOverlay.set_tool_active: {active}")
         self.tool_active = active
 
         if active:
             self._connect_events()
-            print(f"[DEBUG] Tool activated. Image present: {self.image_item.image is not None if self.image_item else False}")
-            if self.image_item and self.image_item.image is not None:
-                print(f"[DEBUG] Image shape: {self.image_item.image.shape}")
         else:
             self._disconnect_events()
             self.cancel_drawing()
@@ -84,33 +80,26 @@ class LineProfileOverlay(QObject):
 
     def _mouse_press_event(self, event):
         """Handle mouse press events in the ViewBox."""
-        print(f"[DEBUG] Mouse press: tool_active={self.tool_active}, has_image={self.image_item.image is not None if self.image_item else False}, button={event.button()}")
-
         if not self.tool_active or self.image_item.image is None:
             # Call the original implementation if tool not active
             if hasattr(self, 'original_mouse_press'):
                 self.original_mouse_press(event)
             return
 
-        # Check Qt button constants (Qt.LeftButton = 1 in Qt5, but might be different)
-        from PySide6.QtCore import Qt
-        if event.button() != Qt.LeftButton:  # Use Qt constant instead of hardcoded value
-            print(f"[DEBUG] Not left button: {event.button()} != {Qt.LeftButton}")
+        # Check Qt button constants
+        if event.button() != Qt.LeftButton:  # Use Qt constant
             if hasattr(self, 'original_mouse_press'):
                 self.original_mouse_press(event)
             return
 
         # Get position in view coordinates
         pos = self.view_box.mapSceneToView(event.pos())
-        print(f"[DEBUG] Click position: {pos.x():.2f}, {pos.y():.2f}, is_drawing={self.is_drawing}")
 
         if not self.is_drawing:
             # Start drawing a new line
-            print("[DEBUG] Starting line drawing")
             self.start_drawing(pos)
         else:
             # Complete the line
-            print("[DEBUG] Completing line drawing")
             self.complete_drawing(pos)
 
         # Accept the event to prevent further processing
@@ -138,12 +127,14 @@ class LineProfileOverlay(QObject):
 
         # Add a temporary marker to show where the line starts
         self.start_marker = pg.ScatterPlotItem(
-            pos=[pos],
-            size=10,
-            pen=pg.mkPen('yellow', width=2),
-            brush=pg.mkBrush('yellow')
+            pos=[(pos.x(), pos.y())],  # Convert to tuple
+            size=15,  # Make bigger
+            pen=pg.mkPen('yellow', width=3),
+            brush=pg.mkBrush('yellow'),
+            symbol='o'  # Explicit circle symbol
         )
         self.plot_item.addItem(self.start_marker)
+        self.start_marker.setZValue(1000)  # Make sure it's on top
 
     def complete_drawing(self, end_pos: QPointF):
         """Complete drawing and create the line profile."""
@@ -155,18 +146,27 @@ class LineProfileOverlay(QObject):
             self.plot_item.removeItem(self.start_marker)
             self.start_marker = None
 
-        # Create LineSegmentROI
+        # Create LineSegmentROI with more visible settings
         self.line_roi = pg.LineSegmentROI(
             [[self.start_pos.x(), self.start_pos.y()],
              [end_pos.x(), end_pos.y()]],
-            pen=pg.mkPen(color='yellow', width=2),
-            hoverPen=pg.mkPen(color='cyan', width=2),
-            handlePen=pg.mkPen(color='yellow', width=8),
-            handleHoverPen=pg.mkPen(color='cyan', width=8)
+            pen=pg.mkPen(color='yellow', width=3, style=Qt.SolidLine),  # Thicker line
+            hoverPen=pg.mkPen(color='cyan', width=4),
+            handlePen=pg.mkPen(color='yellow', width=10),
+            handleHoverPen=pg.mkPen(color='cyan', width=10),
+            movable=True  # Explicitly enable dragging
         )
 
-        # Add to plot
+        # Make handles more visible
+        for handle in self.line_roi.getHandles():
+            handle.radius = 8  # Bigger handles
+            handle.pen = pg.mkPen('yellow', width=2)
+            handle.brush = pg.mkBrush('yellow')
+
+        # Add to plot with proper Z-order (on top of image)
         self.plot_item.addItem(self.line_roi)
+        self.line_roi.setZValue(1000)  # High Z-value to ensure it's on top
+        print(f"[DEBUG] Created line ROI from ({self.start_pos.x():.2f}, {self.start_pos.y():.2f}) to ({end_pos.x():.2f}, {end_pos.y():.2f})")
 
         # Connect to ROI changes
         self.line_roi.sigRegionChanged.connect(self._on_line_changed)
