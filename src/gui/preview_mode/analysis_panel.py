@@ -3,7 +3,7 @@ Analysis results panel for displaying analysis data.
 """
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QTabWidget, QTextEdit, QTreeWidget,
+    QWidget, QVBoxLayout, QTreeWidget,
     QTreeWidgetItem, QHeaderView, QLabel
 )
 from PySide6.QtCore import Qt, Signal
@@ -27,42 +27,20 @@ class AnalysisResultsPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # Tab widget for different result types
-        self._tabs = QTabWidget()
-        layout.addWidget(self._tabs)
+        # Title label
+        title_label = QLabel("Line Profile Analysis")
+        title_label.setStyleSheet("QLabel { font-size: 14px; font-weight: bold; padding: 8px; }")
+        layout.addWidget(title_label)
 
-        # Line Profiles tab
+        # Line Profiles tree widget
         self._line_profiles_widget = QTreeWidget()
         self._line_profiles_widget.setHeaderLabels(["Property", "Value"])
         self._line_profiles_widget.header().setStretchLastSection(True)
-        self._tabs.addTab(self._line_profiles_widget, "Line Profiles")
-
-        # ROI Statistics tab
-        self._roi_stats_widget = QTreeWidget()
-        self._roi_stats_widget.setHeaderLabels(["ROI", "Mean", "Std", "Min", "Max", "Area"])
-        self._roi_stats_widget.header().setStretchLastSection(False)
-        self._tabs.addTab(self._roi_stats_widget, "ROI Statistics")
-
-        # Measurements tab
-        self._measurements_widget = QTreeWidget()
-        self._measurements_widget.setHeaderLabels(["Measurement", "Value", "Unit"])
-        self._measurements_widget.header().setStretchLastSection(False)
-        self._tabs.addTab(self._measurements_widget, "Measurements")
-
-        # Summary tab (text view)
-        self._summary_widget = QTextEdit()
-        self._summary_widget.setReadOnly(True)
-        self._tabs.addTab(self._summary_widget, "Summary")
-
-        # Start with summary tab
-        self._tabs.setCurrentIndex(3)
+        layout.addWidget(self._line_profiles_widget)
 
     def clear_all(self):
         """Clear all analysis results."""
         self._line_profiles_widget.clear()
-        self._roi_stats_widget.clear()
-        self._measurements_widget.clear()
-        self._summary_widget.clear()
 
     def add_line_profile(self, profile_id: str, data: Dict[str, Any]):
         """
@@ -113,59 +91,6 @@ class AnalysisResultsPanel(QWidget):
             max_item.setText(0, "Max")
             max_item.setText(1, f"{np.max(values):.3f}")
 
-        # Switch to line profiles tab
-        self._tabs.setCurrentIndex(0)
-
-    def add_roi_statistics(self, roi_id: str, stats: Dict[str, Any]):
-        """
-        Add ROI statistics.
-
-        Args:
-            roi_id: Unique identifier for the ROI
-            stats: Dictionary with statistics (mean, std, min, max, area, etc.)
-        """
-        item = QTreeWidgetItem(self._roi_stats_widget)
-        item.setText(0, roi_id)
-        item.setText(1, f"{stats.get('mean', 0):.3f}")
-        item.setText(2, f"{stats.get('std', 0):.3f}")
-        item.setText(3, f"{stats.get('min', 0):.3f}")
-        item.setText(4, f"{stats.get('max', 0):.3f}")
-        item.setText(5, f"{stats.get('area', 0):.1f}")
-
-        # Switch to ROI stats tab
-        self._tabs.setCurrentIndex(1)
-
-    def add_measurement(self, measurement_id: str, value: float, unit: str, measurement_type: str):
-        """
-        Add a measurement result.
-
-        Args:
-            measurement_id: Unique identifier for the measurement
-            value: The measured value
-            unit: Unit of measurement
-            measurement_type: Type of measurement (distance, angle, etc.)
-        """
-        item = QTreeWidgetItem(self._measurements_widget)
-        item.setText(0, f"{measurement_type} {measurement_id}")
-        item.setText(1, f"{value:.3f}")
-        item.setText(2, unit)
-
-        # Switch to measurements tab
-        self._tabs.setCurrentIndex(2)
-
-    def update_summary(self, panel_id: str, summary_text: str):
-        """
-        Update the summary text for a panel.
-
-        Args:
-            panel_id: Identifier of the panel
-            summary_text: Summary text to display
-        """
-        current_text = self._summary_widget.toPlainText()
-        if current_text:
-            self._summary_widget.setText(current_text + "\n\n" + f"=== Panel: {panel_id} ===\n{summary_text}")
-        else:
-            self._summary_widget.setText(f"=== Panel: {panel_id} ===\n{summary_text}")
 
     def set_theme(self, is_dark: bool):
         """Update the panel theme."""
@@ -181,20 +106,6 @@ class AnalysisResultsPanel(QWidget):
                     background-color: #2b2b2b;
                     color: #e0e0e0;
                 }
-                QTabWidget::pane {
-                    border: 1px solid #555;
-                    background-color: #2b2b2b;
-                }
-                QTabBar::tab {
-                    background-color: #3a3a3a;
-                    color: #e0e0e0;
-                    padding: 8px 12px;
-                    margin-right: 2px;
-                }
-                QTabBar::tab:selected {
-                    background-color: #0d7377;
-                    color: white;
-                }
                 QTreeWidget {
                     background-color: #1e1e1e;
                     border: none;
@@ -205,10 +116,6 @@ class AnalysisResultsPanel(QWidget):
                 }
                 QTreeWidget::item:selected {
                     background-color: #0d7377;
-                }
-                QTextEdit {
-                    background-color: #1e1e1e;
-                    border: none;
                 }
                 QHeaderView::section {
                     background-color: #3a3a3a;
@@ -224,20 +131,6 @@ class AnalysisResultsPanel(QWidget):
                     background-color: #f5f5f5;
                     color: #333;
                 }
-                QTabWidget::pane {
-                    border: 1px solid #ccc;
-                    background-color: #f5f5f5;
-                }
-                QTabBar::tab {
-                    background-color: #e0e0e0;
-                    color: #333;
-                    padding: 8px 12px;
-                    margin-right: 2px;
-                }
-                QTabBar::tab:selected {
-                    background-color: #14a085;
-                    color: white;
-                }
                 QTreeWidget {
                     background-color: white;
                     border: none;
@@ -249,10 +142,6 @@ class AnalysisResultsPanel(QWidget):
                 QTreeWidget::item:selected {
                     background-color: #14a085;
                     color: white;
-                }
-                QTextEdit {
-                    background-color: white;
-                    border: none;
                 }
                 QHeaderView::section {
                     background-color: #e0e0e0;

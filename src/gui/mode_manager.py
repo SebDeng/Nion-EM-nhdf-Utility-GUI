@@ -3,7 +3,7 @@ Central mode manager that coordinates between Preview and Processing modes.
 This prevents circular imports by serving as the single point of coordination.
 """
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, Qt
 from PySide6.QtWidgets import QTabWidget, QWidget
 from typing import Optional, TYPE_CHECKING
 
@@ -38,8 +38,9 @@ class ModeManager(QObject):
         self.current_file: Optional[str] = None
         self.current_data: Optional['NHDFData'] = None
 
-        # Initialize with preview mode
+        # Initialize both modes so tabs are visible
         self._init_preview_mode()
+        self._init_processing_mode()
 
     def _init_preview_mode(self):
         """Initialize preview mode (always loaded)."""
@@ -53,12 +54,20 @@ class ModeManager(QObject):
             self._preview_widget.file_loaded.connect(self._on_preview_file_loaded)
 
     def _init_processing_mode(self):
-        """Initialize processing mode (lazy loaded)."""
+        """Initialize processing mode."""
         if self._processing_widget is not None:
             return
 
-        # For now, use a placeholder. We'll implement ProcessingWidget next
+        # Create a placeholder with label for now
+        from PySide6.QtWidgets import QLabel, QVBoxLayout
+
         placeholder = QWidget()
+        layout = QVBoxLayout(placeholder)
+        label = QLabel("Processing Mode\n(To be implemented)")
+        label.setAlignment(Qt.AlignCenter)
+        label.setStyleSheet("QLabel { font-size: 18px; color: #888; }")
+        layout.addWidget(label)
+
         self._processing_widget = placeholder
         self.tab_widget.addTab(self._processing_widget, "Processing")
 
@@ -68,10 +77,6 @@ class ModeManager(QObject):
             self.current_mode = "preview"
             self.mode_changed.emit("preview")
         elif index == 1:
-            # Lazy-load processing mode
-            if self._processing_widget is None:
-                self._init_processing_mode()
-
             self.current_mode = "processing"
             self.mode_changed.emit("processing")
 

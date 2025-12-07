@@ -13,11 +13,6 @@ class AnalysisTool(Enum):
     """Available analysis tools."""
     NONE = "none"
     LINE_PROFILE = "line_profile"
-    ROI_RECTANGLE = "roi_rectangle"
-    ROI_CIRCLE = "roi_circle"
-    ROI_POLYGON = "roi_polygon"
-    MEASURE_DISTANCE = "measure_distance"
-    MEASURE_ANGLE = "measure_angle"
 
 
 class AnalysisToolBar(QToolBar):
@@ -69,60 +64,9 @@ class AnalysisToolBar(QToolBar):
 
         self.addSeparator()
 
-        # ROI tools
-        self._roi_rect_action = QAction("Rectangle ROI", self)
-        self._roi_rect_action.setCheckable(True)
-        self._roi_rect_action.setToolTip("Draw rectangular ROI (R)")
-        self._roi_rect_action.setShortcut("R")
-        self._roi_rect_action.setData(AnalysisTool.ROI_RECTANGLE)
-        self._roi_rect_action.triggered.connect(lambda: self._on_tool_selected(AnalysisTool.ROI_RECTANGLE))
-        self._tool_group.addAction(self._roi_rect_action)
-        self.addAction(self._roi_rect_action)
-
-        self._roi_circle_action = QAction("Circle ROI", self)
-        self._roi_circle_action.setCheckable(True)
-        self._roi_circle_action.setToolTip("Draw circular ROI (C)")
-        self._roi_circle_action.setShortcut("C")
-        self._roi_circle_action.setData(AnalysisTool.ROI_CIRCLE)
-        self._roi_circle_action.triggered.connect(lambda: self._on_tool_selected(AnalysisTool.ROI_CIRCLE))
-        self._tool_group.addAction(self._roi_circle_action)
-        self.addAction(self._roi_circle_action)
-
-        self._roi_polygon_action = QAction("Polygon ROI", self)
-        self._roi_polygon_action.setCheckable(True)
-        self._roi_polygon_action.setToolTip("Draw polygon ROI (P)")
-        self._roi_polygon_action.setShortcut("P")
-        self._roi_polygon_action.setData(AnalysisTool.ROI_POLYGON)
-        self._roi_polygon_action.triggered.connect(lambda: self._on_tool_selected(AnalysisTool.ROI_POLYGON))
-        self._tool_group.addAction(self._roi_polygon_action)
-        self.addAction(self._roi_polygon_action)
-
-        self.addSeparator()
-
-        # Measurement tools
-        self._measure_distance_action = QAction("Measure Distance", self)
-        self._measure_distance_action.setCheckable(True)
-        self._measure_distance_action.setToolTip("Measure distance (D)")
-        self._measure_distance_action.setShortcut("D")
-        self._measure_distance_action.setData(AnalysisTool.MEASURE_DISTANCE)
-        self._measure_distance_action.triggered.connect(lambda: self._on_tool_selected(AnalysisTool.MEASURE_DISTANCE))
-        self._tool_group.addAction(self._measure_distance_action)
-        self.addAction(self._measure_distance_action)
-
-        self._measure_angle_action = QAction("Measure Angle", self)
-        self._measure_angle_action.setCheckable(True)
-        self._measure_angle_action.setToolTip("Measure angle (A)")
-        self._measure_angle_action.setShortcut("A")
-        self._measure_angle_action.setData(AnalysisTool.MEASURE_ANGLE)
-        self._measure_angle_action.triggered.connect(lambda: self._on_tool_selected(AnalysisTool.MEASURE_ANGLE))
-        self._tool_group.addAction(self._measure_angle_action)
-        self.addAction(self._measure_angle_action)
-
-        self.addSeparator()
-
         # Clear all button
-        self._clear_action = QAction("Clear All", self)
-        self._clear_action.setToolTip("Clear all analysis overlays")
+        self._clear_action = QAction("Clear Line Profiles", self)
+        self._clear_action.setToolTip("Clear all line profiles")
         self._clear_action.triggered.connect(self._on_clear_all)
         self.addAction(self._clear_action)
 
