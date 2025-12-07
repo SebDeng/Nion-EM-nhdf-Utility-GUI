@@ -41,115 +41,30 @@ class LineProfileOverlay(QObject):
         self.line_roi: Optional[pg.LineSegmentROI] = None
         self.profile_id_counter = 0
 
-        # Drawing state
-        self.is_drawing = False
-        self.start_pos: Optional[QPointF] = None
-        self.start_marker = None
-
-        # Tool state
-        self.tool_active = False
-
-    def set_tool_active(self, active: bool):
-        """Enable or disable the line profile tool."""
-        self.tool_active = active
-
-        if active:
-            self._connect_events()
-        else:
-            self._disconnect_events()
-            self.cancel_drawing()
-
-    def _connect_events(self):
-        """Connect mouse events for drawing."""
-        # Store original handlers
-        self.original_mouse_press = self.view_box.mousePressEvent
-        self.original_mouse_drag = self.view_box.mouseDragEvent
-
-        # Override mouse events
-        self.view_box.mousePressEvent = self._mouse_press_event
-        self.view_box.mouseDragEvent = self._mouse_drag_event
-
-    def _disconnect_events(self):
-        """Disconnect mouse events."""
-        # Restore original event handlers
-        if hasattr(self, 'original_mouse_press'):
-            self.view_box.mousePressEvent = self.original_mouse_press
-
-        if hasattr(self, 'original_mouse_drag'):
-            self.view_box.mouseDragEvent = self.original_mouse_drag
-
-    def _mouse_press_event(self, event):
-        """Handle mouse press events in the ViewBox."""
-        if not self.tool_active or self.image_item.image is None:
-            # Call the original implementation if tool not active
-            if hasattr(self, 'original_mouse_press'):
-                self.original_mouse_press(event)
+    def create_default_line(self):
+        """Create a default line profile that can be dragged to the desired position."""
+        if self.image_item.image is None:
             return
-
-        # Check Qt button constants
-        if event.button() != Qt.LeftButton:  # Use Qt constant
-            if hasattr(self, 'original_mouse_press'):
-                self.original_mouse_press(event)
-            return
-
-        # Get position in view coordinates
-        pos = self.view_box.mapSceneToView(event.pos())
-
-        if not self.is_drawing:
-            # Start drawing a new line
-            self.start_drawing(pos)
-        else:
-            # Complete the line
-            self.complete_drawing(pos)
-
-        # Accept the event to prevent further processing
-        event.accept()
-
-    def _mouse_drag_event(self, event):
-        """Handle mouse drag events - prevent dragging when tool is active."""
-        if not self.tool_active:
-            # Call the original implementation if tool not active
-            if hasattr(self, 'original_mouse_drag'):
-                self.original_mouse_drag(event)
-        else:
-            # When tool is active, just accept the event to prevent panning
-            event.accept()
-
-    def start_drawing(self, pos: QPointF):
-        """Start drawing a new line profile."""
-        self.is_drawing = True
-        self.start_pos = pos
 
         # Remove any existing line
         if self.line_roi is not None:
             self.plot_item.removeItem(self.line_roi)
             self.line_roi = None
 
-        # Add a temporary marker to show where the line starts
-        self.start_marker = pg.ScatterPlotItem(
-            pos=[(pos.x(), pos.y())],  # Convert to tuple
-            size=15,  # Make bigger
-            pen=pg.mkPen('yellow', width=3),
-            brush=pg.mkBrush('yellow'),
-            symbol='o'  # Explicit circle symbol
-        )
-        self.plot_item.addItem(self.start_marker)
-        self.start_marker.setZValue(1000)  # Make sure it's on top
+        # Get image dimensions
+        img_shape = self.image_item.image.shape
+        height, width = img_shape[0], img_shape[1] if len(img_shape) > 1 else img_shape[0]
 
-    def complete_drawing(self, end_pos: QPointF):
-        """Complete drawing and create the line profile."""
-        if not self.is_drawing or self.start_pos is None:
-            return
-
-        # Remove the temporary start marker
-        if self.start_marker is not None:
-            self.plot_item.removeItem(self.start_marker)
-            self.start_marker = None
+        # Create a horizontal line across the middle from 20% to 80% of the image
+        start_x = width * 0.2
+        start_y = height * 0.5
+        end_x = width * 0.8
+        end_y = height * 0.5
 
         # Create LineSegmentROI with more visible settings
         self.line_roi = pg.LineSegmentROI(
-            [[self.start_pos.x(), self.start_pos.y()],
-             [end_pos.x(), end_pos.y()]],
+            [[start_x, start_y],
+             [end_x, end_y]],
             pen=pg.mkPen(color='yellow', width=3, style=Qt.SolidLine),  # Thicker line
             hoverPen=pg.mkPen(color='cyan', width=4),
             handlePen=pg.mkPen(color='yellow', width=10),
@@ -166,27 +81,12 @@ class LineProfileOverlay(QObject):
         # Add to plot with proper Z-order (on top of image)
         self.plot_item.addItem(self.line_roi)
         self.line_roi.setZValue(1000)  # High Z-value to ensure it's on top
-        print(f"[DEBUG] Created line ROI from ({self.start_pos.x():.2f}, {self.start_pos.y():.2f}) to ({end_pos.x():.2f}, {end_pos.y():.2f})")
 
         # Connect to ROI changes
         self.line_roi.sigRegionChanged.connect(self._on_line_changed)
 
         # Extract and emit profile data
         self._extract_profile()
-
-        # Reset drawing state
-        self.is_drawing = False
-        self.start_pos = None
-
-    def cancel_drawing(self):
-        """Cancel current drawing operation."""
-        self.is_drawing = False
-        self.start_pos = None
-
-        # Remove the temporary start marker if it exists
-        if self.start_marker is not None:
-            self.plot_item.removeItem(self.start_marker)
-            self.start_marker = None
 
     def _on_line_changed(self):
         """Handle changes to the line ROI."""
@@ -195,22 +95,17 @@ class LineProfileOverlay(QObject):
 
     def _extract_profile(self):
         """Extract the line profile data from the image."""
-        print("[DEBUG] _extract_profile called")
         if self.line_roi is None or self.image_item.image is None:
-            print("[DEBUG] No ROI or image")
             return
 
         # Get the array data from the line ROI
         data = self.line_roi.getArrayRegion(self.image_item.image, self.image_item)
-        print(f"[DEBUG] Extracted data shape: {data.shape if data is not None else 'None'}, size: {data.size if data is not None else 0}")
 
         if data is None or data.size == 0:
-            print("[DEBUG] No data extracted")
             return
 
         # Get line endpoints in image coordinates
         handles = self.line_roi.getLocalHandlePositions()
-        print(f"[DEBUG] Number of handles: {len(handles)}")
         if len(handles) >= 2:
             p1 = handles[0][1]
             p2 = handles[1][1]
@@ -233,10 +128,9 @@ class LineProfileOverlay(QObject):
                 profile_id=f"Profile_{self.profile_id_counter}"
             )
 
-            print(f"[DEBUG] Created profile: {profile_data.profile_id}, values: {len(data)} points, mean: {np.mean(data):.2f}")
+            print(f"[DEBUG] Emitting profile: {profile_data.profile_id}, values: {len(data)} points")
             # Emit signal
             self.profile_created.emit(profile_data)
-            print("[DEBUG] Signal emitted")
 
     def clear_profile(self):
         """Clear the current line profile."""

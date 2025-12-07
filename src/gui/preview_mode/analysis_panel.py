@@ -50,7 +50,6 @@ class AnalysisResultsPanel(QWidget):
             profile_id: Unique identifier for the profile
             data: Dictionary with profile data (start, end, values, distance, etc.)
         """
-        print(f"[DEBUG] AnalysisPanel.add_line_profile called with {profile_id}")
         item = QTreeWidgetItem(self._line_profiles_widget)
         item.setText(0, f"Profile {profile_id}")
         item.setExpanded(True)

@@ -780,13 +780,10 @@ class DisplayPanel(QWidget):
                     axis_item.setPen(fg_color)
                     axis_item.setTextPen(fg_color)
 
-    def set_analysis_tool(self, tool_name: str):
-        """Set the active analysis tool."""
+    def create_line_profile(self):
+        """Create a default line profile that can be dragged."""
         if self._line_profile_overlay:
-            if tool_name == "line_profile":
-                self._line_profile_overlay.set_tool_active(True)
-            else:
-                self._line_profile_overlay.set_tool_active(False)
+            self._line_profile_overlay.create_default_line()
 
     def clear_analysis_overlays(self):
         """Clear all analysis overlays."""

@@ -5,14 +5,7 @@ Provides tools for examining and analyzing nhdf data.
 
 from PySide6.QtWidgets import QToolBar, QWidget
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction, QIcon, QActionGroup
-from enum import Enum
-
-
-class AnalysisTool(Enum):
-    """Available analysis tools."""
-    NONE = "none"
-    LINE_PROFILE = "line_profile"
+from PySide6.QtGui import QAction, QIcon
 
 
 class AnalysisToolBar(QToolBar):
@@ -21,47 +14,26 @@ class AnalysisToolBar(QToolBar):
     """
 
     # Signals
-    tool_changed = Signal(AnalysisTool)  # Emitted when tool selection changes
+    create_line_profile = Signal()  # Emitted when create line profile is clicked
     clear_requested = Signal()  # Emitted when clear button is clicked
 
     def __init__(self, parent=None):
         super().__init__("Analysis Tools", parent)
         self.setObjectName("AnalysisToolBar")
-
-        # Track current tool
-        self._current_tool = AnalysisTool.NONE
         self._is_dark_mode = True
-
-        # Create tool group for exclusive selection
-        self._tool_group = QActionGroup(self)
-        self._tool_group.setExclusive(True)
 
         self._setup_tools()
         self._apply_theme()
 
     def _setup_tools(self):
         """Set up the analysis tools."""
-        # Selection/Navigation tool (default)
-        self._select_action = QAction("Select", self)
-        self._select_action.setCheckable(True)
-        self._select_action.setChecked(True)
-        self._select_action.setToolTip("Select and navigate (Esc)")
-        self._select_action.setData(AnalysisTool.NONE)
-        self._select_action.triggered.connect(lambda: self._on_tool_selected(AnalysisTool.NONE))
-        self._tool_group.addAction(self._select_action)
-        self.addAction(self._select_action)
-
-        self.addSeparator()
-
-        # Line Profile tool
-        self._line_profile_action = QAction("Line Profile", self)
-        self._line_profile_action.setCheckable(True)
-        self._line_profile_action.setToolTip("Draw line profile (L)")
-        self._line_profile_action.setShortcut("L")
-        self._line_profile_action.setData(AnalysisTool.LINE_PROFILE)
-        self._line_profile_action.triggered.connect(lambda: self._on_tool_selected(AnalysisTool.LINE_PROFILE))
-        self._tool_group.addAction(self._line_profile_action)
-        self.addAction(self._line_profile_action)
+        # Create Line Profile button (not checkable - one-click action)
+        self._create_line_action = QAction("Create Line Profile", self)
+        self._create_line_action.setCheckable(False)  # Not a toggle, just a button
+        self._create_line_action.setToolTip("Create a line profile (L)")
+        self._create_line_action.setShortcut("L")
+        self._create_line_action.triggered.connect(self._on_create_line_profile)
+        self.addAction(self._create_line_action)
 
         self.addSeparator()
 
@@ -71,31 +43,13 @@ class AnalysisToolBar(QToolBar):
         self._clear_action.triggered.connect(self._on_clear_all)
         self.addAction(self._clear_action)
 
-    def _on_tool_selected(self, tool: AnalysisTool):
-        """Handle tool selection."""
-        if tool != self._current_tool:
-            self._current_tool = tool
-            self.tool_changed.emit(tool)
+    def _on_create_line_profile(self):
+        """Handle create line profile button click."""
+        self.create_line_profile.emit()
 
     def _on_clear_all(self):
         """Clear all analysis overlays."""
         self.clear_requested.emit()
-
-    def get_current_tool(self) -> AnalysisTool:
-        """Get the currently selected tool."""
-        return self._current_tool
-
-    def set_tool(self, tool: AnalysisTool):
-        """Set the active tool programmatically."""
-        for action in self._tool_group.actions():
-            if action.data() == tool:
-                action.setChecked(True)
-                self._on_tool_selected(tool)
-                break
-
-    def reset_tool(self):
-        """Reset to selection tool."""
-        self.set_tool(AnalysisTool.NONE)
 
     def set_theme(self, is_dark: bool):
         """Update toolbar theme."""

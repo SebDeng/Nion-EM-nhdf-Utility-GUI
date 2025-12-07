@@ -25,7 +25,7 @@ from src.gui.workspace_display_panel import WorkspaceDisplayPanel
 from src.gui.unified_control_panel import UnifiedControlPanel
 from src.gui.view_mode_toolbar import ViewModeToolBar
 from src.gui.mode_manager import ModeManager
-from src.gui.preview_mode import AnalysisToolBar, AnalysisTool
+from src.gui.preview_mode import AnalysisToolBar
 from src.gui.preview_mode.analysis_panel import AnalysisResultsPanel
 
 
@@ -73,7 +73,7 @@ class WorkspaceMainWindow(QMainWindow):
 
         # Add analysis toolbar below unified controls (only visible in preview mode)
         self._analysis_toolbar = AnalysisToolBar()
-        self._analysis_toolbar.tool_changed.connect(self._on_analysis_tool_changed)
+        self._analysis_toolbar.create_line_profile.connect(self._on_create_line_profile)
         self._analysis_toolbar.clear_requested.connect(self._on_clear_analysis)
         central_layout.addWidget(self._analysis_toolbar)
 
@@ -822,18 +822,17 @@ class WorkspaceMainWindow(QMainWindow):
             self._analysis_toolbar.setVisible(False)
             self._analysis_dock.setVisible(False)
 
-    def _on_analysis_tool_changed(self, tool: AnalysisTool):
-        """Handle analysis tool selection."""
-        # Show analysis dock when a tool is selected
-        if tool != AnalysisTool.NONE:
-            self._analysis_dock.setVisible(True)
+    def _on_create_line_profile(self):
+        """Handle create line profile button click."""
+        # Show analysis dock
+        self._analysis_dock.setVisible(True)
 
-        # Propagate tool change to all display panels in the workspace
-        if self._workspace:
-            for panel in self._workspace.panels:
-                if isinstance(panel, WorkspaceDisplayPanel):
-                    if hasattr(panel, 'display_panel') and panel.display_panel:
-                        panel.display_panel.set_analysis_tool(tool.value)
+        # Get the selected panel and create a line profile on it
+        if self._workspace and self._workspace.selected_panel:
+            panel = self._workspace.selected_panel
+            if isinstance(panel, WorkspaceDisplayPanel):
+                if hasattr(panel, 'display_panel') and panel.display_panel:
+                    panel.display_panel.create_line_profile()
 
     def _on_clear_analysis(self):
         """Handle clear analysis request."""
@@ -849,11 +848,9 @@ class WorkspaceMainWindow(QMainWindow):
 
     def _on_line_profile_created(self, profile_data):
         """Handle line profile creation from display panels."""
-        print("[DEBUG] _on_line_profile_created called")
         from src.gui.line_profile_overlay import LineProfileData
 
         if isinstance(profile_data, LineProfileData):
-            print(f"[DEBUG] Received profile: {profile_data.profile_id}")
             # Add to analysis panel
             data_dict = {
                 'start': profile_data.start_point,
@@ -862,10 +859,7 @@ class WorkspaceMainWindow(QMainWindow):
                 'distance': profile_data.distances[-1] if len(profile_data.distances) > 0 else 0,
                 'unit': profile_data.unit
             }
-            print(f"[DEBUG] Adding to panel: {len(profile_data.values)} values")
             self._analysis_panel.add_line_profile(profile_data.profile_id, data_dict)
-        else:
-            print(f"[DEBUG] Not a LineProfileData instance: {type(profile_data)}")
 
     def _on_save_layout(self):
         """Save current workspace layout."""
@@ -934,7 +928,8 @@ class WorkspaceMainWindow(QMainWindow):
                     display._graphics_widget.setBackground(bg_color)
 
                 # Connect line profile signals to analysis panel
-                display.line_profile_created.connect(self._on_line_profile_created)
+                if hasattr(display, '_line_profile_overlay') and display._line_profile_overlay:
+                    display._line_profile_overlay.profile_created.connect(self._on_line_profile_created)
 
     def _on_panel_removed(self, panel: WorkspacePanel):
         """Handle panel removal."""
@@ -1112,6 +1107,19 @@ class WorkspaceMainWindow(QMainWindow):
                 data = self._loaded_files[str_path]
 
             panel.set_data(data, str(path))
+
+            # Connect line profile signal if not already connected
+            if isinstance(panel, WorkspaceDisplayPanel):
+                if hasattr(panel, 'display_panel') and panel.display_panel:
+                    display = panel.display_panel
+                    if hasattr(display, '_line_profile_overlay') and display._line_profile_overlay:
+                        # Disconnect any existing connections first to avoid duplicates
+                        try:
+                            display._line_profile_overlay.profile_created.disconnect()
+                        except:
+                            pass
+                        # Connect the signal
+                        display._line_profile_overlay.profile_created.connect(self._on_line_profile_created)
 
             # Select the panel (this will trigger updates)
             self._workspace._select_panel(panel)
