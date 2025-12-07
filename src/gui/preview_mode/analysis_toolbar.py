@@ -3,7 +3,7 @@ Analysis toolbar for preview mode.
 Provides tools for examining and analyzing nhdf data.
 """
 
-from PySide6.QtWidgets import QToolBar, QWidget
+from PySide6.QtWidgets import QToolBar, QWidget, QSpinBox, QLabel
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction, QIcon
 
@@ -16,6 +16,7 @@ class AnalysisToolBar(QToolBar):
     # Signals
     create_line_profile = Signal()  # Emitted when create line profile is clicked
     clear_requested = Signal()  # Emitted when clear button is clicked
+    width_changed = Signal(int)  # Emitted when line width is changed
 
     def __init__(self, parent=None):
         super().__init__("Analysis Tools", parent)
@@ -37,6 +38,21 @@ class AnalysisToolBar(QToolBar):
 
         self.addSeparator()
 
+        # Line width control
+        width_label = QLabel(" Width: ")
+        self.addWidget(width_label)
+
+        self._width_spinbox = QSpinBox()
+        self._width_spinbox.setMinimum(1)
+        self._width_spinbox.setMaximum(50)
+        self._width_spinbox.setValue(5)  # Default width
+        self._width_spinbox.setSuffix(" px")
+        self._width_spinbox.setToolTip("Line profile averaging width in pixels")
+        self._width_spinbox.valueChanged.connect(self._on_width_changed)
+        self.addWidget(self._width_spinbox)
+
+        self.addSeparator()
+
         # Clear all button
         self._clear_action = QAction("Clear Line Profiles", self)
         self._clear_action.setToolTip("Clear all line profiles")
@@ -50,6 +66,10 @@ class AnalysisToolBar(QToolBar):
     def _on_clear_all(self):
         """Clear all analysis overlays."""
         self.clear_requested.emit()
+
+    def _on_width_changed(self, value):
+        """Handle width spinbox value change."""
+        self.width_changed.emit(value)
 
     def set_theme(self, is_dark: bool):
         """Update toolbar theme."""

@@ -2,13 +2,11 @@
 Analysis results panel for displaying analysis data.
 """
 
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QTreeWidget,
-    QTreeWidgetItem, QHeaderView, QLabel
-)
+from PySide6.QtWidgets import QWidget, QVBoxLayout
 from PySide6.QtCore import Qt, Signal
 from typing import Optional, Dict, Any, List
 import numpy as np
+from src.gui.line_profile_widget import LineProfileWidget
 
 
 class AnalysisResultsPanel(QWidget):
@@ -27,75 +25,44 @@ class AnalysisResultsPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # Title label
-        title_label = QLabel("Line Profile Analysis")
-        title_label.setStyleSheet("QLabel { font-size: 14px; font-weight: bold; padding: 8px; }")
-        layout.addWidget(title_label)
-
-        # Line Profiles tree widget
-        self._line_profiles_widget = QTreeWidget()
-        self._line_profiles_widget.setHeaderLabels(["Property", "Value"])
-        self._line_profiles_widget.header().setStretchLastSection(True)
-        layout.addWidget(self._line_profiles_widget)
+        # Line profile plot widget
+        self._line_profile_widget = LineProfileWidget()
+        layout.addWidget(self._line_profile_widget)
 
     def clear_all(self):
         """Clear all analysis results."""
-        self._line_profiles_widget.clear()
+        self._line_profile_widget.clear_plot()
 
     def add_line_profile(self, profile_id: str, data: Dict[str, Any]):
         """
-        Add a line profile result.
+        Add/update a line profile result.
 
         Args:
             profile_id: Unique identifier for the profile
-            data: Dictionary with profile data (start, end, values, distance, etc.)
+            data: Dictionary with profile data (start, end, values, distances, etc.)
         """
-        item = QTreeWidgetItem(self._line_profiles_widget)
-        item.setText(0, f"Profile {profile_id}")
-        item.setExpanded(True)
+        # Need to have both values and distances for plotting
+        if 'values' in data:
+            # If distances not provided, create them
+            if 'distances' not in data:
+                values = data['values']
+                if 'distance' in data:
+                    # Create distances from 0 to total distance
+                    data['distances'] = np.linspace(0, data['distance'], len(values))
+                else:
+                    # Just use indices
+                    data['distances'] = np.arange(len(values))
 
-        # Add sub-items for profile properties
-        if 'start' in data and 'end' in data:
-            start_item = QTreeWidgetItem(item)
-            start_item.setText(0, "Start")
-            start_item.setText(1, f"({data['start'][0]:.1f}, {data['start'][1]:.1f})")
-
-            end_item = QTreeWidgetItem(item)
-            end_item.setText(0, "End")
-            end_item.setText(1, f"({data['end'][0]:.1f}, {data['end'][1]:.1f})")
-
-        if 'distance' in data:
-            dist_item = QTreeWidgetItem(item)
-            dist_item.setText(0, "Distance")
-            dist_item.setText(1, f"{data['distance']:.2f} {data.get('unit', 'px')}")
-
-        if 'values' in data and len(data['values']) > 0:
-            values = data['values']
-            stats_item = QTreeWidgetItem(item)
-            stats_item.setText(0, "Statistics")
-            stats_item.setExpanded(True)
-
-            mean_item = QTreeWidgetItem(stats_item)
-            mean_item.setText(0, "Mean")
-            mean_item.setText(1, f"{np.mean(values):.3f}")
-
-            std_item = QTreeWidgetItem(stats_item)
-            std_item.setText(0, "Std Dev")
-            std_item.setText(1, f"{np.std(values):.3f}")
-
-            min_item = QTreeWidgetItem(stats_item)
-            min_item.setText(0, "Min")
-            min_item.setText(1, f"{np.min(values):.3f}")
-
-            max_item = QTreeWidgetItem(stats_item)
-            max_item.setText(0, "Max")
-            max_item.setText(1, f"{np.max(values):.3f}")
+            # Update the plot
+            self._line_profile_widget.update_profile(profile_id, data)
 
 
     def set_theme(self, is_dark: bool):
         """Update the panel theme."""
         self._is_dark_mode = is_dark
         self._apply_theme()
+        # Also update the line profile widget theme
+        self._line_profile_widget.set_theme(is_dark)
 
     def _apply_theme(self):
         """Apply the current theme."""

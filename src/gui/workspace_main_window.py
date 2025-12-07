@@ -75,6 +75,7 @@ class WorkspaceMainWindow(QMainWindow):
         self._analysis_toolbar = AnalysisToolBar()
         self._analysis_toolbar.create_line_profile.connect(self._on_create_line_profile)
         self._analysis_toolbar.clear_requested.connect(self._on_clear_analysis)
+        self._analysis_toolbar.width_changed.connect(self._on_line_width_changed)
         central_layout.addWidget(self._analysis_toolbar)
 
         # Create mode manager with tabbed workspace/processing
@@ -846,18 +847,31 @@ class WorkspaceMainWindow(QMainWindow):
                     if hasattr(panel, 'display_panel') and panel.display_panel:
                         panel.display_panel.clear_analysis_overlays()
 
+    def _on_line_width_changed(self, width):
+        """Handle line profile width change from toolbar."""
+        # Update width for all display panels with line profiles
+        if self._workspace:
+            for panel in self._workspace.panels:
+                if isinstance(panel, WorkspaceDisplayPanel):
+                    if hasattr(panel, 'display_panel') and panel.display_panel:
+                        display = panel.display_panel
+                        if hasattr(display, '_line_profile_overlay') and display._line_profile_overlay:
+                            display._line_profile_overlay.set_line_width(width)
+
     def _on_line_profile_created(self, profile_data):
         """Handle line profile creation from display panels."""
         from src.gui.line_profile_overlay import LineProfileData
 
-        if isinstance(profile_data, LineProfileData):
-            # Add to analysis panel
+        if isinstance(profile_data, LineProfileData) and self._analysis_panel:
+            # Add to analysis panel - include both 'distances' array and 'distance' total
             data_dict = {
                 'start': profile_data.start_point,
                 'end': profile_data.end_point,
                 'values': profile_data.values,
-                'distance': profile_data.distances[-1] if len(profile_data.distances) > 0 else 0,
-                'unit': profile_data.unit
+                'distances': profile_data.distances,  # Array of distances for plotting
+                'distance': profile_data.distances[-1] if len(profile_data.distances) > 0 else 0,  # Total distance
+                'unit': profile_data.unit,
+                'width': profile_data.width if hasattr(profile_data, 'width') else 1
             }
             self._analysis_panel.add_line_profile(profile_data.profile_id, data_dict)
 

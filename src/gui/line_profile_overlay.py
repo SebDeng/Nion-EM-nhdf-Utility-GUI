@@ -19,6 +19,7 @@ class LineProfileData:
     distances: np.ndarray
     unit: str = "px"
     profile_id: str = ""
+    width: float = 1.0  # Width in pixels for averaging
 
 
 class LineProfileOverlay(QObject):
@@ -40,16 +41,21 @@ class LineProfileOverlay(QObject):
         # Line ROI for profile
         self.line_roi: Optional[pg.LineSegmentROI] = None
         self.profile_id_counter = 0
+        self.line_width = 5  # Default width in pixels for averaging
 
     def create_default_line(self):
         """Create a default line profile that can be dragged to the desired position."""
         if self.image_item.image is None:
             return
 
-        # Remove any existing line
+        # Remove any existing line and reset profile ID for new line
         if self.line_roi is not None:
             self.plot_item.removeItem(self.line_roi)
             self.line_roi = None
+
+        # Reset profile ID for new line
+        if hasattr(self, '_current_profile_id'):
+            delattr(self, '_current_profile_id')
 
         # Get image dimensions
         img_shape = self.image_item.image.shape
@@ -61,7 +67,7 @@ class LineProfileOverlay(QObject):
         end_x = width * 0.8
         end_y = height * 0.5
 
-        # Create LineSegmentROI with more visible settings
+        # Create LineSegmentROI with more visible settings and default width
         self.line_roi = pg.LineSegmentROI(
             [[start_x, start_y],
              [end_x, end_y]],
@@ -71,6 +77,8 @@ class LineProfileOverlay(QObject):
             handleHoverPen=pg.mkPen(color='cyan', width=10),
             movable=True  # Explicitly enable dragging
         )
+
+        # The line width is controlled by the line thickness (perpendicular to the line direction)
 
         # Make handles more visible
         for handle in self.line_roi.getHandles():
@@ -94,43 +102,117 @@ class LineProfileOverlay(QObject):
             self._extract_profile()
 
     def _extract_profile(self):
-        """Extract the line profile data from the image."""
+        """Extract the line profile data from the image with width averaging."""
         if self.line_roi is None or self.image_item.image is None:
             return
 
-        # Get the array data from the line ROI
-        data = self.line_roi.getArrayRegion(self.image_item.image, self.image_item)
+        import scipy.ndimage as ndimage
+
+        # Get line endpoints
+        handles = self.line_roi.getLocalHandlePositions()
+        if len(handles) < 2:
+            return
+
+        p1 = handles[0][1]
+        p2 = handles[1][1]
+
+        # Get image data
+        image = self.image_item.image
+
+        # Calculate line parameters
+        x1, y1 = p1.x(), p1.y()
+        x2, y2 = p2.x(), p2.y()
+        line_length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+
+        if line_length == 0:
+            return
+
+        # Number of points to sample along the line
+        num_points = int(line_length * 2)  # Sample at ~0.5 pixel resolution
+
+        # Create coordinates along the line
+        x_coords = np.linspace(x1, x2, num_points)
+        y_coords = np.linspace(y1, y2, num_points)
+
+        # Calculate perpendicular direction for width sampling
+        dx = x2 - x1
+        dy = y2 - y1
+        # Perpendicular vector (rotated 90 degrees)
+        perp_dx = -dy / line_length
+        perp_dy = dx / line_length
+
+        # Sample points across the width
+        if self.line_width > 1:
+            # Create offset positions perpendicular to the line
+            profile_values = []
+            half_width = self.line_width / 2.0
+            width_samples = max(1, int(self.line_width))
+
+            for offset in np.linspace(-half_width, half_width, width_samples):
+                # Offset the line perpendicular to its direction
+                offset_x = x_coords + offset * perp_dx
+                offset_y = y_coords + offset * perp_dy
+
+                # Interpolate values along this offset line
+                try:
+                    values = ndimage.map_coordinates(
+                        image,
+                        [offset_y, offset_x],
+                        order=1,  # Linear interpolation
+                        mode='constant',
+                        cval=np.nan
+                    )
+                    profile_values.append(values)
+                except:
+                    pass
+
+            # Average across the width
+            if profile_values:
+                data = np.nanmean(profile_values, axis=0)
+            else:
+                # Fallback to single line
+                data = ndimage.map_coordinates(
+                    image,
+                    [y_coords, x_coords],
+                    order=1,
+                    mode='constant',
+                    cval=np.nan
+                )
+        else:
+            # Single line profile (no width averaging)
+            data = ndimage.map_coordinates(
+                image,
+                [y_coords, x_coords],
+                order=1,
+                mode='constant',
+                cval=np.nan
+            )
 
         if data is None or data.size == 0:
             return
 
-        # Get line endpoints in image coordinates
-        handles = self.line_roi.getLocalHandlePositions()
-        if len(handles) >= 2:
-            p1 = handles[0][1]
-            p2 = handles[1][1]
+        # Calculate distances along the line
+        start_point = (x1, y1)
+        end_point = (x2, y2)
+        distances = np.linspace(0, line_length, len(data))
 
-            start_point = (p1.x(), p1.y())
-            end_point = (p2.x(), p2.y())
-
-            # Calculate distances along the line
-            num_points = len(data)
-            distances = np.linspace(0, np.sqrt((p2.x() - p1.x())**2 + (p2.y() - p1.y())**2), num_points)
-
-            # Create profile data
+        # Use consistent profile_id for updates (don't increment on drag)
+        if not hasattr(self, '_current_profile_id'):
             self.profile_id_counter += 1
-            profile_data = LineProfileData(
-                start_point=start_point,
-                end_point=end_point,
-                values=data,
-                distances=distances,
-                unit="px",
-                profile_id=f"Profile_{self.profile_id_counter}"
-            )
+            self._current_profile_id = f"Profile_{self.profile_id_counter}"
 
-            print(f"[DEBUG] Emitting profile: {profile_data.profile_id}, values: {len(data)} points")
-            # Emit signal
-            self.profile_created.emit(profile_data)
+        profile_data = LineProfileData(
+            start_point=start_point,
+            end_point=end_point,
+            values=data,
+            distances=distances,
+            unit="px",
+            profile_id=self._current_profile_id,
+            width=self.line_width
+        )
+
+        # Emit signal for live updates
+        self.profile_created.emit(profile_data)
 
     def clear_profile(self):
         """Clear the current line profile."""
@@ -138,8 +220,22 @@ class LineProfileOverlay(QObject):
             self.plot_item.removeItem(self.line_roi)
             self.line_roi = None
 
-        self.cancel_drawing()
+        # Reset profile ID
+        if hasattr(self, '_current_profile_id'):
+            delattr(self, '_current_profile_id')
 
     def clear_all(self):
         """Clear all line profiles."""
         self.clear_profile()
+
+    def set_line_width(self, width: int):
+        """
+        Set the width of the line profile for averaging.
+
+        Args:
+            width: Width in pixels (1 = no averaging, >1 = average across width)
+        """
+        self.line_width = max(1, int(width))
+        # Re-extract profile with new width if a line exists
+        if self.line_roi is not None:
+            self._extract_profile()
