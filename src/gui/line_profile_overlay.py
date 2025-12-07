@@ -43,6 +43,10 @@ class LineProfileOverlay(QObject):
         self.profile_id_counter = 0
         self.line_width = 5  # Default width in pixels for averaging
 
+        # Visual indicators for line width
+        self.width_lines = []  # Lines showing the width boundaries
+        self.width_fill = None  # Filled area showing the width region
+
     def create_default_line(self):
         """Create a default line profile that can be dragged to the desired position."""
         if self.image_item.image is None:
@@ -93,12 +97,16 @@ class LineProfileOverlay(QObject):
         # Connect to ROI changes
         self.line_roi.sigRegionChanged.connect(self._on_line_changed)
 
+        # Create width indicators
+        self._update_width_indicators()
+
         # Extract and emit profile data
         self._extract_profile()
 
     def _on_line_changed(self):
         """Handle changes to the line ROI."""
         if self.line_roi is not None:
+            self._update_width_indicators()
             self._extract_profile()
 
     def _extract_profile(self):
@@ -214,8 +222,97 @@ class LineProfileOverlay(QObject):
         # Emit signal for live updates
         self.profile_created.emit(profile_data)
 
+    def _update_width_indicators(self):
+        """Update the visual indicators showing the line width."""
+        # Clear existing indicators
+        for line in self.width_lines:
+            self.plot_item.removeItem(line)
+        self.width_lines.clear()
+
+        if self.width_fill is not None:
+            self.plot_item.removeItem(self.width_fill)
+            self.width_fill = None
+
+        if self.line_roi is None or self.line_width <= 1:
+            return
+
+        # Get line endpoints
+        handles = self.line_roi.getLocalHandlePositions()
+        if len(handles) < 2:
+            return
+
+        p1 = handles[0][1]
+        p2 = handles[1][1]
+        x1, y1 = p1.x(), p1.y()
+        x2, y2 = p2.x(), p2.y()
+
+        # Calculate perpendicular direction
+        dx = x2 - x1
+        dy = y2 - y1
+        length = np.sqrt(dx**2 + dy**2)
+        if length == 0:
+            return
+
+        # Perpendicular unit vector
+        perp_dx = -dy / length
+        perp_dy = dx / length
+
+        # Calculate offset for width boundaries
+        half_width = self.line_width / 2.0
+
+        # Create boundary lines (parallel to main line)
+        # Upper boundary
+        upper_x = [x1 + half_width * perp_dx, x2 + half_width * perp_dx]
+        upper_y = [y1 + half_width * perp_dy, y2 + half_width * perp_dy]
+
+        # Lower boundary
+        lower_x = [x1 - half_width * perp_dx, x2 - half_width * perp_dx]
+        lower_y = [y1 - half_width * perp_dy, y2 - half_width * perp_dy]
+
+        # Create filled polygon to show the width area
+        # Vertices: upper-left, upper-right, lower-right, lower-left (closed polygon)
+        polygon_x = [upper_x[0], upper_x[1], lower_x[1], lower_x[0], upper_x[0]]
+        polygon_y = [upper_y[0], upper_y[1], lower_y[1], lower_y[0], upper_y[0]]
+
+        # Create semi-transparent fill
+        fill_brush = pg.mkBrush(color=(0, 255, 255, 30))  # Cyan with 30/255 alpha
+        # Use PlotCurveItem for filled polygon
+        self.width_fill = pg.PlotCurveItem(polygon_x, polygon_y, fillLevel='enclosed', fillBrush=fill_brush, pen=None)
+        self.plot_item.addItem(self.width_fill)
+        self.width_fill.setZValue(998)  # Below the boundary lines
+
+        # Create the boundary lines with dashed style
+        pen = pg.mkPen(color='cyan', width=1, style=Qt.DashLine)
+
+        upper_line = pg.PlotDataItem(upper_x, upper_y, pen=pen)
+        lower_line = pg.PlotDataItem(lower_x, lower_y, pen=pen)
+
+        # Add connecting lines at the ends
+        left_cap_x = [upper_x[0], lower_x[0]]
+        left_cap_y = [upper_y[0], lower_y[0]]
+        right_cap_x = [upper_x[1], lower_x[1]]
+        right_cap_y = [upper_y[1], lower_y[1]]
+
+        left_cap = pg.PlotDataItem(left_cap_x, left_cap_y, pen=pen)
+        right_cap = pg.PlotDataItem(right_cap_x, right_cap_y, pen=pen)
+
+        # Add all lines to the plot
+        for line in [upper_line, lower_line, left_cap, right_cap]:
+            self.plot_item.addItem(line)
+            line.setZValue(999)  # Just below the main line
+            self.width_lines.append(line)
+
     def clear_profile(self):
         """Clear the current line profile."""
+        # Clear width indicators
+        for line in self.width_lines:
+            self.plot_item.removeItem(line)
+        self.width_lines.clear()
+
+        if self.width_fill is not None:
+            self.plot_item.removeItem(self.width_fill)
+            self.width_fill = None
+
         if self.line_roi is not None:
             self.plot_item.removeItem(self.line_roi)
             self.line_roi = None
@@ -236,6 +333,7 @@ class LineProfileOverlay(QObject):
             width: Width in pixels (1 = no averaging, >1 = average across width)
         """
         self.line_width = max(1, int(width))
-        # Re-extract profile with new width if a line exists
+        # Update visual indicators and re-extract profile if a line exists
         if self.line_roi is not None:
+            self._update_width_indicators()
             self._extract_profile()
