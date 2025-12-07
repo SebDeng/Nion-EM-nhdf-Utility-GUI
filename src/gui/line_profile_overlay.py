@@ -51,10 +51,14 @@ class LineProfileOverlay(QObject):
 
     def set_tool_active(self, active: bool):
         """Enable or disable the line profile tool."""
+        print(f"[DEBUG] LineProfileOverlay.set_tool_active: {active}")
         self.tool_active = active
 
         if active:
             self._connect_events()
+            print(f"[DEBUG] Tool activated. Image present: {self.image_item.image is not None if self.image_item else False}")
+            if self.image_item and self.image_item.image is not None:
+                print(f"[DEBUG] Image shape: {self.image_item.image.shape}")
         else:
             self._disconnect_events()
             self.cancel_drawing()
@@ -80,26 +84,33 @@ class LineProfileOverlay(QObject):
 
     def _mouse_press_event(self, event):
         """Handle mouse press events in the ViewBox."""
+        print(f"[DEBUG] Mouse press: tool_active={self.tool_active}, has_image={self.image_item.image is not None if self.image_item else False}, button={event.button()}")
+
         if not self.tool_active or self.image_item.image is None:
             # Call the original implementation if tool not active
             if hasattr(self, 'original_mouse_press'):
                 self.original_mouse_press(event)
             return
 
-        # Only handle left button press
-        if event.button() != 1:  # Not left button
+        # Check Qt button constants (Qt.LeftButton = 1 in Qt5, but might be different)
+        from PySide6.QtCore import Qt
+        if event.button() != Qt.LeftButton:  # Use Qt constant instead of hardcoded value
+            print(f"[DEBUG] Not left button: {event.button()} != {Qt.LeftButton}")
             if hasattr(self, 'original_mouse_press'):
                 self.original_mouse_press(event)
             return
 
         # Get position in view coordinates
         pos = self.view_box.mapSceneToView(event.pos())
+        print(f"[DEBUG] Click position: {pos.x():.2f}, {pos.y():.2f}, is_drawing={self.is_drawing}")
 
         if not self.is_drawing:
             # Start drawing a new line
+            print("[DEBUG] Starting line drawing")
             self.start_drawing(pos)
         else:
             # Complete the line
+            print("[DEBUG] Completing line drawing")
             self.complete_drawing(pos)
 
         # Accept the event to prevent further processing

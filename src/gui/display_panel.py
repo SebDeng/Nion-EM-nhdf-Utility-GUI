@@ -782,10 +782,13 @@ class DisplayPanel(QWidget):
 
     def set_analysis_tool(self, tool_name: str):
         """Set the active analysis tool."""
+        print(f"[DEBUG] DisplayPanel.set_analysis_tool: {tool_name}")
         if self._line_profile_overlay:
             if tool_name == "line_profile":
+                print("[DEBUG] Activating line profile tool")
                 self._line_profile_overlay.set_tool_active(True)
             else:
+                print("[DEBUG] Deactivating line profile tool")
                 self._line_profile_overlay.set_tool_active(False)
 
     def clear_analysis_overlays(self):
