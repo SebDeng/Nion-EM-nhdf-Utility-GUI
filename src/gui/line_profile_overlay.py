@@ -237,14 +237,22 @@ class LineProfileOverlay(QObject):
             return
 
         # Get line endpoints
+        # getLocalHandlePositions returns LOCAL positions relative to the ROI
+        # We need to transform them to plot coordinates
+
         handles = self.line_roi.getLocalHandlePositions()
         if len(handles) < 2:
             return
 
         p1 = handles[0][1]
         p2 = handles[1][1]
-        x1, y1 = p1.x(), p1.y()
-        x2, y2 = p2.x(), p2.y()
+
+        # Transform local to scene coordinates by adding ROI position
+        roi_pos = self.line_roi.pos()
+        x1 = roi_pos.x() + p1.x()
+        y1 = roi_pos.y() + p1.y()
+        x2 = roi_pos.x() + p2.x()
+        y2 = roi_pos.y() + p2.y()
 
         # Calculate perpendicular direction
         dx = x2 - x1
@@ -253,7 +261,7 @@ class LineProfileOverlay(QObject):
         if length == 0:
             return
 
-        # Perpendicular unit vector
+        # Perpendicular unit vector (rotate 90 degrees counter-clockwise)
         perp_dx = -dy / length
         perp_dy = dx / length
 
