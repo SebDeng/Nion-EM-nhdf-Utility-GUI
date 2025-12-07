@@ -830,7 +830,7 @@ class WorkspaceMainWindow(QMainWindow):
 
         # Propagate tool change to all display panels in the workspace
         if self._workspace:
-            for panel in self._workspace.panels.values():
+            for panel in self._workspace.panels:
                 if isinstance(panel, WorkspaceDisplayPanel):
                     if hasattr(panel, 'display_panel') and panel.display_panel:
                         panel.display_panel.set_analysis_tool(tool.value)
@@ -842,7 +842,7 @@ class WorkspaceMainWindow(QMainWindow):
 
         # Clear overlays in all display panels
         if self._workspace:
-            for panel in self._workspace.panels.values():
+            for panel in self._workspace.panels:
                 if isinstance(panel, WorkspaceDisplayPanel):
                     if hasattr(panel, 'display_panel') and panel.display_panel:
                         panel.display_panel.clear_analysis_overlays()
