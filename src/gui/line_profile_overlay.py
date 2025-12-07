@@ -61,28 +61,39 @@ class LineProfileOverlay(QObject):
 
     def _connect_events(self):
         """Connect mouse events for drawing."""
-        # Connect to the ViewBox mouse press events directly
-        self.view_box.mouseClickEvent = self._mouse_click_event
+        # Store original handlers
+        self.original_mouse_press = self.view_box.mousePressEvent
+        self.original_mouse_drag = self.view_box.mouseDragEvent
+
+        # Override mouse events
+        self.view_box.mousePressEvent = self._mouse_press_event
+        self.view_box.mouseDragEvent = self._mouse_drag_event
 
     def _disconnect_events(self):
         """Disconnect mouse events."""
-        # Restore default mouse behavior
-        self.view_box.mouseClickEvent = pg.ViewBox.mouseClickEvent
+        # Restore original event handlers
+        if hasattr(self, 'original_mouse_press'):
+            self.view_box.mousePressEvent = self.original_mouse_press
 
-    def _mouse_click_event(self, event):
-        """Handle mouse click events in the ViewBox."""
+        if hasattr(self, 'original_mouse_drag'):
+            self.view_box.mouseDragEvent = self.original_mouse_drag
+
+    def _mouse_press_event(self, event):
+        """Handle mouse press events in the ViewBox."""
         if not self.tool_active or self.image_item.image is None:
-            # Call the parent implementation if tool not active
-            pg.ViewBox.mouseClickEvent(self.view_box, event)
+            # Call the original implementation if tool not active
+            if hasattr(self, 'original_mouse_press'):
+                self.original_mouse_press(event)
             return
 
-        # Only handle left clicks
+        # Only handle left button press
         if event.button() != 1:  # Not left button
-            pg.ViewBox.mouseClickEvent(self.view_box, event)
+            if hasattr(self, 'original_mouse_press'):
+                self.original_mouse_press(event)
             return
 
         # Get position in view coordinates
-        pos = self.view_box.mapSceneToView(event.scenePos())
+        pos = self.view_box.mapSceneToView(event.pos())
 
         if not self.is_drawing:
             # Start drawing a new line
@@ -93,6 +104,16 @@ class LineProfileOverlay(QObject):
 
         # Accept the event to prevent further processing
         event.accept()
+
+    def _mouse_drag_event(self, event):
+        """Handle mouse drag events - prevent dragging when tool is active."""
+        if not self.tool_active:
+            # Call the original implementation if tool not active
+            if hasattr(self, 'original_mouse_drag'):
+                self.original_mouse_drag(event)
+        else:
+            # When tool is active, just accept the event to prevent panning
+            event.accept()
 
     def start_drawing(self, pos: QPointF):
         """Start drawing a new line profile."""
