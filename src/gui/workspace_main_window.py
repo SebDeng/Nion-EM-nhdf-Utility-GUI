@@ -849,9 +849,11 @@ class WorkspaceMainWindow(QMainWindow):
 
     def _on_line_profile_created(self, profile_data):
         """Handle line profile creation from display panels."""
+        print("[DEBUG] _on_line_profile_created called")
         from src.gui.line_profile_overlay import LineProfileData
 
         if isinstance(profile_data, LineProfileData):
+            print(f"[DEBUG] Received profile: {profile_data.profile_id}")
             # Add to analysis panel
             data_dict = {
                 'start': profile_data.start_point,
@@ -860,7 +862,10 @@ class WorkspaceMainWindow(QMainWindow):
                 'distance': profile_data.distances[-1] if len(profile_data.distances) > 0 else 0,
                 'unit': profile_data.unit
             }
+            print(f"[DEBUG] Adding to panel: {len(profile_data.values)} values")
             self._analysis_panel.add_line_profile(profile_data.profile_id, data_dict)
+        else:
+            print(f"[DEBUG] Not a LineProfileData instance: {type(profile_data)}")
 
     def _on_save_layout(self):
         """Save current workspace layout."""

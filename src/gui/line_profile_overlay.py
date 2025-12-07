@@ -195,17 +195,22 @@ class LineProfileOverlay(QObject):
 
     def _extract_profile(self):
         """Extract the line profile data from the image."""
+        print("[DEBUG] _extract_profile called")
         if self.line_roi is None or self.image_item.image is None:
+            print("[DEBUG] No ROI or image")
             return
 
         # Get the array data from the line ROI
         data = self.line_roi.getArrayRegion(self.image_item.image, self.image_item)
+        print(f"[DEBUG] Extracted data shape: {data.shape if data is not None else 'None'}, size: {data.size if data is not None else 0}")
 
         if data is None or data.size == 0:
+            print("[DEBUG] No data extracted")
             return
 
         # Get line endpoints in image coordinates
         handles = self.line_roi.getLocalHandlePositions()
+        print(f"[DEBUG] Number of handles: {len(handles)}")
         if len(handles) >= 2:
             p1 = handles[0][1]
             p2 = handles[1][1]
@@ -228,8 +233,10 @@ class LineProfileOverlay(QObject):
                 profile_id=f"Profile_{self.profile_id_counter}"
             )
 
+            print(f"[DEBUG] Created profile: {profile_data.profile_id}, values: {len(data)} points, mean: {np.mean(data):.2f}")
             # Emit signal
             self.profile_created.emit(profile_data)
+            print("[DEBUG] Signal emitted")
 
     def clear_profile(self):
         """Clear the current line profile."""
