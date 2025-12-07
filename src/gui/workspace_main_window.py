@@ -24,6 +24,9 @@ from src.gui.workspace import WorkspaceWidget, WorkspacePanel
 from src.gui.workspace_display_panel import WorkspaceDisplayPanel
 from src.gui.unified_control_panel import UnifiedControlPanel
 from src.gui.view_mode_toolbar import ViewModeToolBar
+from src.gui.mode_manager import ModeManager
+from src.gui.preview_mode import AnalysisToolBar, AnalysisTool
+from src.gui.preview_mode.analysis_panel import AnalysisResultsPanel
 
 
 class WorkspaceMainWindow(QMainWindow):
@@ -68,9 +71,18 @@ class WorkspaceMainWindow(QMainWindow):
         self._unified_controls = UnifiedControlPanel()
         central_layout.addWidget(self._unified_controls)
 
-        # Create workspace widget below the toolbar
-        self._workspace = WorkspaceWidget()
-        central_layout.addWidget(self._workspace, 1)  # Give workspace the stretch factor
+        # Add analysis toolbar below unified controls (only visible in preview mode)
+        self._analysis_toolbar = AnalysisToolBar()
+        self._analysis_toolbar.tool_changed.connect(self._on_analysis_tool_changed)
+        central_layout.addWidget(self._analysis_toolbar)
+
+        # Create mode manager with tabbed workspace/processing
+        self._mode_manager = ModeManager(self)
+        self._mode_manager.mode_changed.connect(self._on_mode_changed)
+        central_layout.addWidget(self._mode_manager.get_widget(), 1)  # Give tabs the stretch factor
+
+        # Keep reference to workspace for compatibility
+        self._workspace = self._mode_manager.get_preview_widget()
 
         self.setCentralWidget(central_widget)
 
@@ -83,37 +95,26 @@ class WorkspaceMainWindow(QMainWindow):
         self._file_browser_dock.setMinimumWidth(250)
         self.addDockWidget(Qt.LeftDockWidgetArea, self._file_browser_dock)
 
-        # Right dock - Metadata Panel with Export button
+        # Right dock - Metadata Panel (without Export button - moved to File menu)
         self._metadata_dock = QDockWidget("Metadata", self)
         self._metadata_dock.setObjectName("MetadataDock")
 
-        # Create container widget with metadata panel and export button
-        metadata_container = QWidget()
-        metadata_layout = QVBoxLayout(metadata_container)
-        metadata_layout.setContentsMargins(0, 0, 0, 0)
-        metadata_layout.setSpacing(0)
-
         self._metadata_panel = MetadataPanel()
-        metadata_layout.addWidget(self._metadata_panel, 1)
-
-        # Export button at bottom of metadata panel
-        self._export_btn = QPushButton("Export...")
-        self._export_btn.setEnabled(False)
-        self._export_btn.setMinimumHeight(36)
-        self._export_btn.clicked.connect(self._on_export)
-        self._export_btn.setStyleSheet("""
-            QPushButton {
-                font-size: 14px;
-                font-weight: bold;
-                margin: 8px;
-            }
-        """)
-        metadata_layout.addWidget(self._export_btn)
-
-        self._metadata_dock.setWidget(metadata_container)
+        self._metadata_dock.setWidget(self._metadata_panel)
         self._metadata_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self._metadata_dock.setMinimumWidth(300)
         self.addDockWidget(Qt.RightDockWidgetArea, self._metadata_dock)
+
+        # Bottom dock - Analysis Results Panel (only visible in preview mode)
+        self._analysis_dock = QDockWidget("Analysis Results", self)
+        self._analysis_dock.setObjectName("AnalysisDock")
+
+        self._analysis_panel = AnalysisResultsPanel()
+        self._analysis_dock.setWidget(self._analysis_panel)
+        self._analysis_dock.setAllowedAreas(Qt.BottomDockWidgetArea | Qt.RightDockWidgetArea)
+        self._analysis_dock.setMinimumHeight(200)
+        self.addDockWidget(Qt.BottomDockWidgetArea, self._analysis_dock)
+        self._analysis_dock.setVisible(False)  # Start hidden
 
     def _setup_menus(self):
         """Set up the menu bar with workspace actions."""
@@ -152,6 +153,15 @@ class WorkspaceMainWindow(QMainWindow):
 
         file_menu.addSeparator()
 
+        # Export action (moved from metadata panel for better accessibility)
+        self._export_action = QAction("&Export...", self)
+        self._export_action.setShortcut(QKeySequence("Ctrl+E"))
+        self._export_action.setEnabled(False)
+        self._export_action.triggered.connect(self._on_export)
+        file_menu.addAction(self._export_action)
+
+        file_menu.addSeparator()
+
         exit_action = QAction("E&xit", self)
         exit_action.setShortcut(QKeySequence.Quit)
         exit_action.triggered.connect(self.close)
@@ -162,6 +172,7 @@ class WorkspaceMainWindow(QMainWindow):
 
         view_menu.addAction(self._file_browser_dock.toggleViewAction())
         view_menu.addAction(self._metadata_dock.toggleViewAction())
+        view_menu.addAction(self._analysis_dock.toggleViewAction())
 
         view_menu.addSeparator()
 
@@ -575,6 +586,14 @@ class WorkspaceMainWindow(QMainWindow):
         if hasattr(self, '_view_toolbar'):
             self._view_toolbar.set_theme(is_dark)
 
+        # Update analysis toolbar theme
+        if hasattr(self, '_analysis_toolbar'):
+            self._analysis_toolbar.set_theme(is_dark)
+
+        # Update analysis panel theme
+        if hasattr(self, '_analysis_panel'):
+            self._analysis_panel.set_theme(is_dark)
+
         if is_dark:
             # Apply dark theme
             from main import apply_dark_theme
@@ -790,6 +809,27 @@ class WorkspaceMainWindow(QMainWindow):
 
         # Update all workspace panels through the workspace widget
         self._workspace.set_theme(is_dark)
+
+    def _on_mode_changed(self, mode: str):
+        """Handle mode change between Preview and Processing."""
+        if mode == "preview":
+            # Show analysis tools for preview mode
+            self._analysis_toolbar.setVisible(True)
+            self._analysis_dock.setVisible(False)  # Start hidden, user can show if needed
+        elif mode == "processing":
+            # Hide analysis tools in processing mode
+            self._analysis_toolbar.setVisible(False)
+            self._analysis_dock.setVisible(False)
+
+    def _on_analysis_tool_changed(self, tool: AnalysisTool):
+        """Handle analysis tool selection."""
+        # Show analysis dock when a tool is selected
+        if tool != AnalysisTool.NONE:
+            self._analysis_dock.setVisible(True)
+
+        # TODO: Connect to display panels to activate the tool
+        # For now, just print the selected tool
+        print(f"Analysis tool selected: {tool.value}")
 
     def _on_save_layout(self):
         """Save current workspace layout."""
@@ -1058,7 +1098,6 @@ class WorkspaceMainWindow(QMainWindow):
             has_data = self._workspace.selected_panel.current_data is not None
 
         self._export_action.setEnabled(has_data)
-        self._export_btn.setEnabled(has_data)
 
         # Check if any panel has data
         any_has_data = any(
