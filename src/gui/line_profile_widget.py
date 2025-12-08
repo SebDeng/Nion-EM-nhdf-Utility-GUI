@@ -3,8 +3,8 @@ Line profile plotting widget using pyqtgraph.
 """
 
 import pyqtgraph as pg
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFileDialog, QMessageBox
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFileDialog, QMessageBox, QHBoxLayout, QPushButton, QCheckBox
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap, QFont
 import numpy as np
 from typing import Optional, Dict, Any
@@ -15,12 +15,22 @@ from src.gui.line_profile_export_dialog import LineProfileExportDialog
 class LineProfileWidget(QWidget):
     """Widget that displays a line profile plot."""
 
+    # Signal emitted when reference marker is added (index, x, y)
+    reference_marker_added = Signal(int, float, float)
+    # Signal to clear all reference markers
+    reference_markers_cleared = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._is_dark_mode = True
         self._current_profile_id = None
         self._current_unit = "nm"  # Default unit
         self._current_data = None  # Store data for unit changes
+        self._reference_lines = []  # List of reference lines
+        self._reference_labels = []  # List of reference labels
+        self._reference_enabled = False
+        self._reference_colors = ['red', 'green', 'blue', 'magenta', 'cyan', 'orange']
+        self._color_index = 0
         self._setup_ui()
         self._apply_theme()
 
@@ -29,11 +39,27 @@ class LineProfileWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
 
-        # Title
+        # Title with reference controls
+        title_layout = QHBoxLayout()
+
         self._title_label = QLabel("Line Profile")
         self._title_label.setAlignment(Qt.AlignCenter)
         self._title_label.setStyleSheet("QLabel { font-weight: bold; font-size: 14px; padding: 4px; }")
-        layout.addWidget(self._title_label)
+        title_layout.addWidget(self._title_label)
+
+        # Reference line controls
+        self._add_ref_btn = QPushButton("Add Reference")
+        self._add_ref_btn.setCheckable(True)
+        self._add_ref_btn.toggled.connect(self._toggle_reference_mode)
+        self._add_ref_btn.setMaximumWidth(100)
+        title_layout.addWidget(self._add_ref_btn)
+
+        self._clear_ref_btn = QPushButton("Clear All")
+        self._clear_ref_btn.clicked.connect(self._clear_all_references)
+        self._clear_ref_btn.setMaximumWidth(80)
+        title_layout.addWidget(self._clear_ref_btn)
+
+        layout.addLayout(title_layout)
 
         # Create plot widget
         self._plot_widget = pg.PlotWidget()
@@ -41,8 +67,35 @@ class LineProfileWidget(QWidget):
         self._plot_widget.setLabel('bottom', 'Distance', units='px')
         self._plot_widget.showGrid(x=True, y=True, alpha=0.3)
 
+        # Completely disable all mouse interactions except clicking
+        self._plot_widget.setMouseEnabled(x=False, y=False)
+
+        # Disable menu on right-click
+        self._plot_widget.setMenuEnabled(False)
+
+        # Get the ViewBox and disable all default mouse interactions
+        vb = self._plot_widget.getViewBox()
+        vb.setMouseMode(pg.ViewBox.PanMode)  # Set to pan mode but it's disabled
+        vb.setMouseEnabled(x=False, y=False)
+
+        # Disable wheel events for zooming
+        vb.wheelEvent = lambda ev: None
+
         # Create plot curve (will set color in _apply_theme)
         self._plot_curve = self._plot_widget.plot([], [])
+
+        # Create start marker (green dot at beginning of profile)
+        self._start_marker = pg.ScatterPlotItem(
+            pos=[],
+            size=12,
+            pen=pg.mkPen('green', width=2),
+            brush=pg.mkBrush('green'),
+            symbol='o'
+        )
+        self._plot_widget.addItem(self._start_marker)
+
+        # Connect mouse click for adding reference lines
+        self._plot_widget.scene().sigMouseClicked.connect(self._on_plot_clicked)
 
         layout.addWidget(self._plot_widget)
 
@@ -82,11 +135,19 @@ class LineProfileWidget(QWidget):
             # Update plot
             self._plot_curve.setData(display_distances, values)
 
+            # Update start marker to show beginning of profile
+            if len(display_distances) > 0 and len(values) > 0:
+                self._start_marker.setData(pos=[(display_distances[0], values[0])])
+
             # Update axis label with correct unit
             self._plot_widget.setLabel('bottom', 'Distance', units=unit_label)
 
             # Auto-range to fit data
             self._plot_widget.enableAutoRange()
+
+            # Ensure mouse interactions remain disabled after data update
+            self._plot_widget.setMouseEnabled(x=False, y=False)
+            self._plot_widget.getViewBox().setMouseEnabled(x=False, y=False)
 
             # Update info
             if len(values) > 0:
@@ -104,7 +165,8 @@ class LineProfileWidget(QWidget):
                 if 'start' in data and 'end' in data:
                     start = data['start']
                     end = data['end']
-                    self._title_label.setText(f"Line Profile: ({start[0]:.1f}, {start[1]:.1f}) → ({end[0]:.1f}, {end[1]:.1f})")
+                    # Add visual indicators for start and end
+                    self._title_label.setText(f"Line Profile: 🟢 ({start[0]:.1f}, {start[1]:.1f}) → 🔴 ({end[0]:.1f}, {end[1]:.1f})")
         else:
             # Clear if no valid data
             self.clear_plot()
@@ -112,10 +174,13 @@ class LineProfileWidget(QWidget):
     def clear_plot(self):
         """Clear the plot."""
         self._plot_curve.setData([], [])
+        self._start_marker.setData(pos=[])
         self._info_label.setText("")
         self._title_label.setText("Line Profile")
         self._current_profile_id = None
         self._current_data = None
+        # Also clear reference lines when clearing plot
+        self._clear_all_references()
 
     def set_unit(self, unit: str):
         """Change the display unit (px or nm)."""
@@ -124,9 +189,12 @@ class LineProfileWidget(QWidget):
             # Re-plot with new units if we have data
             if self._current_data and self._current_profile_id:
                 self.update_profile(self._current_profile_id, self._current_data)
+                # Ensure mouse interactions remain disabled
+                self._plot_widget.setMouseEnabled(x=False, y=False)
+                self._plot_widget.getViewBox().setMouseEnabled(x=False, y=False)
 
     def export_plot(self):
-        """Export the current plot as an image file with customization options."""
+        """Export the current plot as an image file or CSV with customization options."""
         if not self._current_data:
             QMessageBox.warning(self, "No Data", "No line profile data to export.")
             return
@@ -135,12 +203,14 @@ class LineProfileWidget(QWidget):
         plot_data = self._current_data.copy()
         plot_data['unit'] = self._current_unit
 
-        # Open export dialog
+        # Open export dialog (handles both image and CSV export)
         dialog = LineProfileExportDialog(plot_data, self)
 
         if dialog.exec_() == LineProfileExportDialog.Accepted:
             settings = dialog.get_export_settings()
-            self._export_with_settings(settings)
+            # Only export image if image type was selected (CSV is handled in dialog)
+            if settings.get('export_type') == 'image':
+                self._export_with_settings(settings)
 
     def _export_with_settings(self, settings: Dict[str, Any]):
         """Export the plot with custom settings."""
@@ -292,3 +362,123 @@ class LineProfileWidget(QWidget):
 
             # Update grid for light mode (slightly darker)
             self._plot_widget.showGrid(x=True, y=True, alpha=0.4)
+
+    def _toggle_reference_mode(self, checked: bool):
+        """Toggle reference line addition mode."""
+        self._reference_enabled = checked
+        if checked:
+            self._add_ref_btn.setText("Click Plot")
+            self._add_ref_btn.setStyleSheet("QPushButton { background-color: #4a90d9; }")
+        else:
+            self._add_ref_btn.setText("Add Reference")
+            self._add_ref_btn.setStyleSheet("")
+
+    def _clear_all_references(self):
+        """Clear all reference lines."""
+        # Remove all reference lines and labels
+        for line in self._reference_lines:
+            self._plot_widget.removeItem(line)
+        for label in self._reference_labels:
+            self._plot_widget.removeItem(label)
+
+        self._reference_lines.clear()
+        self._reference_labels.clear()
+        self._color_index = 0
+
+        # Emit signal to clear markers on image
+        self.reference_markers_cleared.emit()
+
+    def _on_plot_clicked(self, event):
+        """Handle mouse clicks on the plot to add reference lines."""
+        if not self._reference_enabled or not self._current_data:
+            return
+
+        # Get the position in data coordinates
+        pos = event.scenePos()
+        mouse_point = self._plot_widget.plotItem.vb.mapSceneToView(pos)
+        x_pos = mouse_point.x()
+
+        # Check if click is within data range
+        distances = np.array(self._current_data['distances'])
+        if len(distances) == 0:
+            return
+
+        # Apply unit conversion if needed
+        display_distances = distances.copy()
+        if self._current_unit == "nm" and 'calibration' in self._current_data and self._current_data['calibration']:
+            display_distances = distances * self._current_data['calibration']
+
+        # Check if click is within the data range
+        if x_pos < display_distances[0] or x_pos > display_distances[-1]:
+            return
+
+        # Add a new reference line at this position
+        self._add_reference_at_position(x_pos)
+
+        # Turn off reference mode after adding
+        self._add_ref_btn.setChecked(False)
+        self._reference_enabled = False
+
+    def _add_reference_at_position(self, x_pos):
+        """Add a reference line at the specified x position."""
+        if not self._current_data:
+            return
+
+        # Get the next color
+        color = self._reference_colors[self._color_index % len(self._reference_colors)]
+        self._color_index += 1
+
+        # Create a new reference line (non-movable)
+        ref_line = pg.InfiniteLine(
+            pos=x_pos,
+            angle=90,
+            movable=False,  # Fixed position
+            pen=pg.mkPen(color=color, width=2, style=Qt.DashLine)
+        )
+        self._plot_widget.addItem(ref_line)
+        self._reference_lines.append(ref_line)
+
+        # Find the corresponding intensity value
+        values = np.array(self._current_data['values'])
+        distances = np.array(self._current_data['distances'])
+
+        # Apply unit conversion
+        display_distances = distances.copy()
+        if self._current_unit == "nm" and 'calibration' in self._current_data and self._current_data['calibration']:
+            display_distances = distances * self._current_data['calibration']
+
+        # Find closest data point
+        idx = np.argmin(np.abs(display_distances - x_pos))
+
+        if 0 <= idx < len(values):
+            intensity = values[idx]
+            distance_val = display_distances[idx]
+
+            # Create label
+            unit_str = "nm" if self._current_unit == "nm" else "px"
+            label_text = f"{distance_val:.1f} {unit_str}\n{intensity:.1f}"
+
+            ref_label = pg.TextItem(
+                text=label_text,
+                color=color,
+                anchor=(0, 1)
+            )
+            ref_label.setPos(x_pos, intensity)
+            self._plot_widget.addItem(ref_label)
+            self._reference_labels.append(ref_label)
+
+            # Calculate image position and emit signal
+            if 'start' in self._current_data and 'end' in self._current_data:
+                start = np.array(self._current_data['start'])
+                end = np.array(self._current_data['end'])
+
+                # Calculate position along line (0 to 1)
+                t = idx / (len(distances) - 1) if len(distances) > 1 else 0
+
+                # Interpolate position on image
+                image_x = start[0] + t * (end[0] - start[0])
+                image_y = start[1] + t * (end[1] - start[1])
+
+                # Emit signal with position info and color index
+                self.reference_marker_added.emit(self._color_index - 1, image_x, image_y)
+

@@ -51,6 +51,10 @@ class LineProfileOverlay(QObject):
         # Calibration info (set by display panel)
         self.calibration = None  # Will be set as CalibrationInfo if available
 
+        # Reference markers for correlation with plot
+        self.reference_markers = []  # List of reference markers
+        self.reference_colors = ['red', 'green', 'blue', 'magenta', 'cyan', 'orange']
+
     def create_default_line(self):
         """Create a default line profile that can be dragged to the desired position."""
         if self.image_item.image is None:
@@ -75,31 +79,54 @@ class LineProfileOverlay(QObject):
         end_x = width * 0.8
         end_y = height * 0.5
 
-        # Create LineSegmentROI with more visible settings and default width
+        # Create LineSegmentROI with special configuration
         self.line_roi = pg.LineSegmentROI(
             [[start_x, start_y],
              [end_x, end_y]],
-            pen=pg.mkPen(color='yellow', width=3, style=Qt.SolidLine),  # Thicker line
+            pen=pg.mkPen(color='yellow', width=3, style=Qt.SolidLine),
             hoverPen=pg.mkPen(color='cyan', width=4),
             handlePen=pg.mkPen(color='yellow', width=10),
             handleHoverPen=pg.mkPen(color='cyan', width=10),
-            movable=True  # Explicitly enable dragging
+            movable=False  # This prevents the body from being dragged
         )
 
-        # The line width is controlled by the line thickness (perpendicular to the line direction)
+        # Make handles more visible with distinct colors for head and tail
+        handles = self.line_roi.getHandles()
+        for i, handle in enumerate(handles):
+            handle.radius = 10  # Bigger handles for easier grabbing
+            if i == 0:
+                # Start handle (head) - Green square
+                handle.pen = pg.mkPen('green', width=3)
+                handle.brush = pg.mkBrush('green')
+                handle.symbol = 's'  # Square for start
+            else:
+                # End handle (tail) - Red circle
+                handle.pen = pg.mkPen('red', width=3)
+                handle.brush = pg.mkBrush('red')
+                handle.symbol = 'o'  # Circle for end
+            # Ensure handles remain interactive even though body isn't movable
+            handle.setAcceptedMouseButtons(Qt.LeftButton)
 
-        # Make handles more visible
-        for handle in self.line_roi.getHandles():
-            handle.radius = 8  # Bigger handles
-            handle.pen = pg.mkPen('yellow', width=2)
-            handle.brush = pg.mkBrush('yellow')
+        # Override the line ROI mouse drag event to prevent body movement
+        original_mouse_drag = self.line_roi.mouseDragEvent
+        def no_body_drag(ev):
+            # Check if we're dragging a handle
+            for handle in self.line_roi.getHandles():
+                if handle.isMoving:
+                    # Allow handle movement
+                    return original_mouse_drag(ev)
+            # Ignore body drag attempts
+            ev.ignore()
+
+        self.line_roi.mouseDragEvent = no_body_drag
 
         # Add to plot with proper Z-order (on top of image)
         self.plot_item.addItem(self.line_roi)
         self.line_roi.setZValue(1000)  # High Z-value to ensure it's on top
 
-        # Connect to ROI changes
+        # Connect to ROI changes (both during and after movement)
         self.line_roi.sigRegionChanged.connect(self._on_line_changed)
+        self.line_roi.sigRegionChangeFinished.connect(self._on_line_changed)
 
         # Create width indicators
         self._update_width_indicators()
@@ -180,7 +207,23 @@ class LineProfileOverlay(QObject):
 
             # Average across the width
             if profile_values:
-                data = np.nanmean(profile_values, axis=0)
+                # Filter out empty arrays before averaging
+                valid_profiles = [p for p in profile_values if p.size > 0 and not np.all(np.isnan(p))]
+                if valid_profiles and len(valid_profiles) > 0:
+                    # Suppress warnings completely for this operation
+                    with np.errstate(all='ignore'):
+                        data = np.nanmean(np.array(valid_profiles), axis=0)
+                        # Replace any remaining NaN with 0
+                        data = np.nan_to_num(data, nan=0.0)
+                else:
+                    # All profiles were empty, use single line as fallback
+                    data = ndimage.map_coordinates(
+                        image,
+                        [y_coords, x_coords],
+                        order=1,
+                        mode='constant',
+                        cval=0
+                    )
             else:
                 # Fallback to single line
                 data = ndimage.map_coordinates(
@@ -188,7 +231,7 @@ class LineProfileOverlay(QObject):
                     [y_coords, x_coords],
                     order=1,
                     mode='constant',
-                    cval=np.nan
+                    cval=0
                 )
         else:
             # Single line profile (no width averaging)
@@ -197,7 +240,7 @@ class LineProfileOverlay(QObject):
                 [y_coords, x_coords],
                 order=1,
                 mode='constant',
-                cval=np.nan
+                cval=0
             )
 
         if data is None or data.size == 0:
@@ -355,3 +398,83 @@ class LineProfileOverlay(QObject):
         if self.line_roi is not None:
             self._update_width_indicators()
             self._extract_profile()
+
+    def add_reference_marker(self, x: float, y: float, index: int = None):
+        """
+        Add a marker at the reference position on the image.
+
+        Args:
+            x: X coordinate on the image
+            y: Y coordinate on the image
+            index: Color index for the marker
+        """
+        # Get color based on index
+        if index is None:
+            index = len(self.reference_markers)
+        color = self.reference_colors[index % len(self.reference_colors)]
+
+        # Convert color name to RGB for brush
+        color_map = {
+            'red': (255, 0, 0),
+            'green': (0, 255, 0),
+            'blue': (0, 0, 255),
+            'magenta': (255, 0, 255),
+            'cyan': (0, 255, 255),
+            'orange': (255, 165, 0)
+        }
+        rgb = color_map.get(color, (255, 0, 0))
+
+        # Create a crosshair marker
+        marker = pg.ScatterPlotItem(
+            pos=[(x, y)],
+            size=15,
+            pen=pg.mkPen(color, width=2),
+            brush=pg.mkBrush(*rgb, 120),
+            symbol='+'
+        )
+        self.plot_item.addItem(marker)
+        marker.setZValue(1001)  # Above the line profile
+        self.reference_markers.append(marker)
+
+    def clear_reference_markers(self):
+        """Clear all reference markers."""
+        for marker in self.reference_markers:
+            self.plot_item.removeItem(marker)
+        self.reference_markers.clear()
+
+    def show_reference_marker(self, x: float, y: float):
+        """Legacy method - adds a reference marker."""
+        if x < 0 and y < 0:
+            self.clear_reference_markers()
+        else:
+            self.add_reference_marker(x, y)
+
+    def hide_reference_marker(self):
+        """Legacy method - clears all reference markers."""
+        self.clear_reference_markers()
+
+    def get_line_endpoints(self):
+        """
+        Get the current line endpoints.
+
+        Returns:
+            Tuple of (start_point, end_point) or None if no line exists
+        """
+        if self.line_roi is None:
+            return None
+
+        handles = self.line_roi.getLocalHandlePositions()
+        if len(handles) < 2:
+            return None
+
+        p1 = handles[0][1]
+        p2 = handles[1][1]
+
+        # Transform to scene coordinates
+        roi_pos = self.line_roi.pos()
+        x1 = roi_pos.x() + p1.x()
+        y1 = roi_pos.y() + p1.y()
+        x2 = roi_pos.x() + p2.x()
+        y2 = roi_pos.y() + p2.y()
+
+        return ((x1, y1), (x2, y2))

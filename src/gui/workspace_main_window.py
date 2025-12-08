@@ -42,6 +42,7 @@ class WorkspaceMainWindow(QMainWindow):
         self._settings = QSettings("NionUtility", "nhdfGUI")
         self._workspace_layouts: List[Dict] = []  # Saved layouts
         self._is_dark_mode = True  # Track current theme
+        self._current_display_panel = None  # Track active display panel for reference
 
         self._setup_ui()
         self._setup_menus()
@@ -890,6 +891,42 @@ class WorkspaceMainWindow(QMainWindow):
             }
             self._analysis_panel.add_line_profile(profile_data.profile_id, data_dict)
 
+            # Connect reference marker signals if not already connected
+            if hasattr(self._analysis_panel, '_line_profile_widget'):
+                line_widget = self._analysis_panel._line_profile_widget
+
+                # Store connections as attributes to track them
+                if hasattr(self, '_ref_marker_connection'):
+                    try:
+                        line_widget.reference_marker_added.disconnect(self._ref_marker_connection)
+                    except (RuntimeError, TypeError):
+                        pass
+
+                if hasattr(self, '_ref_clear_connection'):
+                    try:
+                        line_widget.reference_markers_cleared.disconnect(self._ref_clear_connection)
+                    except (RuntimeError, TypeError):
+                        pass
+
+                # Connect to the display that created this profile
+                if self._current_display_panel:
+                    self._ref_marker_connection = self._on_reference_marker_added
+                    self._ref_clear_connection = self._on_reference_markers_cleared
+                    line_widget.reference_marker_added.connect(self._ref_marker_connection)
+                    line_widget.reference_markers_cleared.connect(self._ref_clear_connection)
+
+    def _on_reference_marker_added(self, index: int, image_x: float, image_y: float):
+        """Handle reference marker addition from the line profile widget."""
+        # Add reference marker on the current display
+        if self._current_display_panel and hasattr(self._current_display_panel, '_line_profile_overlay'):
+            self._current_display_panel._line_profile_overlay.add_reference_marker(image_x, image_y, index)
+
+    def _on_reference_markers_cleared(self):
+        """Handle clearing of all reference markers."""
+        # Clear all reference markers on the current display
+        if self._current_display_panel and hasattr(self._current_display_panel, '_line_profile_overlay'):
+            self._current_display_panel._line_profile_overlay.clear_reference_markers()
+
     def _on_save_layout(self):
         """Save current workspace layout."""
         name, ok = QInputDialog.getText(
@@ -966,11 +1003,15 @@ class WorkspaceMainWindow(QMainWindow):
 
     def _on_panel_selected(self, panel: WorkspacePanel):
         """Handle panel selection."""
-        # Update metadata panel if it's a display panel with data
-        if isinstance(panel, WorkspaceDisplayPanel) and panel.current_data:
-            self._metadata_panel.set_data(panel.current_data)
-            self._statusbar.showMessage(panel.current_data.get_summary())
+        # Track the current display panel
+        if isinstance(panel, WorkspaceDisplayPanel):
+            self._current_display_panel = panel.display_panel if hasattr(panel, 'display_panel') else panel
+            # Update metadata panel if it has data
+            if panel.current_data:
+                self._metadata_panel.set_data(panel.current_data)
+                self._statusbar.showMessage(panel.current_data.get_summary())
         else:
+            self._current_display_panel = None
             self._metadata_panel.clear()
 
         self._update_export_actions()
