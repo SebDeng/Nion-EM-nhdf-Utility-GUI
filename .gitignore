@@ -88,3 +88,8 @@ nion-swift-reference/
 
 # Screenshots (local only)
 Screenshot*.png
+
+# Exported plots (local only)
+line_profile*.png
+line_profile*.jpg
+line_profile*.jpeg
