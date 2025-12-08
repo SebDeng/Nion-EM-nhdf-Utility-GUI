@@ -20,10 +20,11 @@ Please send any bug or issue you noticed to sebastian.deng@yale.edu and I will t
 **Have FUN!!!**
 ## Features
 
+- **Multi-Format Support**: Read both Nion nhdf and Gatan DM3/DM4 files
 - **Free-Tiling Workspace** (Default): Nion Swift-style panel management with flexible splitting
-- **Drag & Drop Support**: Drag nhdf files from file browser or system directly to panels
-- **Multi-file Preview**: Open and compare multiple nhdf files simultaneously
-- **Data Visualization**: View 2D images, line profiles, and multi-dimensional data
+- **Drag & Drop Support**: Drag EM files from file browser or system directly to panels
+- **Multi-file Preview**: Open and compare multiple files simultaneously
+- **Data Visualization**: View 2D images, line profiles, histograms, and multi-dimensional data
 - **Metadata Browser**: Explore comprehensive metadata including calibrations, timestamps, and instrument parameters
 - **Export Options**: Export data to various formats (TIFF, PNG, JPG, MP4 video, CSV, JSON)
 - **Modern UI**: Clean, dark-themed interface built with PySide6 (Qt), inspired by Nion Swift
@@ -102,10 +103,23 @@ The application runs in workspace mode by default, where you can:
 | pyqtgraph | 0.14.0 | Fast interactive plotting |
 | niondata | 15.9.1 | Nion data structures |
 | scipy | 1.16.3 | Scientific computing |
+| ncempy | 1.11.1 | DM3/DM4 file reading |
 
 ### Full Dependency List
 
 See `requirements.txt` for complete list with all transitive dependencies.
+
+## Supported File Formats
+
+This application supports the following electron microscopy file formats:
+
+| Format | Extension | Description |
+|--------|-----------|-------------|
+| **Nion HDF** | `.nhdf` | Native Nion Swift format, HDF5-based with rich metadata |
+| **Gatan DM3** | `.dm3` | Gatan Digital Micrograph version 3 format |
+| **Gatan DM4** | `.dm4` | Gatan Digital Micrograph version 4 format |
+
+All formats are read into a unified data structure, allowing seamless viewing and comparison of data from different sources.
 
 ## nhdf File Format
 
@@ -123,6 +137,110 @@ file.nhdf
 │   └── <uuid>/          # Dataset with raw data
 │       └── @properties  # JSON metadata attribute
 ```
+
+## NHDF vs DM3 File Format Comparison
+
+This section compares Nion's NHDF format with Gatan's DM3 format, two common file formats in electron microscopy.
+
+### Format Overview
+
+| Aspect | NHDF (Nion HDF) | DM3 (Digital Micrograph) |
+|--------|-----------------|--------------------------|
+| **Base Format** | HDF5 (open standard) | Proprietary binary |
+| **Developer** | Nion Company | Gatan Inc. |
+| **File Extension** | `.nhdf` | `.dm3`, `.dm4` |
+| **Open Standard** | Yes (HDF5) | No (reverse-engineered) |
+| **Libraries** | h5py, niondata, any HDF5 | ncempy, hyperspy, dm3_lib |
+
+### Data Structure Comparison
+
+| Feature | NHDF | DM3 |
+|---------|------|-----|
+| **Sequences/Stacks** | Native 3D arrays (frames × H × W) | Typically separate files |
+| **Multiple Datasets** | Yes (`data/0`, `data/1`, ...) | Possible but uncommon |
+| **Compression** | Yes (gzip, lzf, etc.) | No built-in |
+| **Chunking** | Yes (HDF5 native) | No |
+| **Lazy Loading** | Yes (partial reads) | Limited |
+
+### Metadata Structure
+
+**NHDF** stores metadata as JSON in HDF5 attributes:
+```
+properties (JSON attribute)
+├── type, uuid, created, data_modified
+├── data_shape, data_dtype, is_sequence
+├── dimensional_calibrations[]
+│   └── {offset, scale, units} per dimension
+├── intensity_calibration {offset, scale, units}
+├── metadata
+│   ├── instrument
+│   │   ├── high_tension, defocus, condenser_setting
+│   │   └── ImageScanned (EHT, PMT gains, stage, aberrations)
+│   ├── scan
+│   │   ├── fov_nm, center_x/y_nm, rotation
+│   │   └── scan_size, pixel_time_us, line_time_us
+│   └── hardware_source
+│       └── channel_name/id, exposure
+├── title, session_id, session
+└── timezone, timezone_offset
+```
+
+**DM3** uses a nested tag hierarchy:
+```
+.DataBar
+└── Acquisition Date/Time
+.ImageList.1.ImageData
+├── Calibrations
+│   ├── Brightness {Origin, Scale, Units}
+│   └── Dimension.N {Origin, Scale, Units}
+├── DataType, PixelDepth
+└── Dimensions
+.ImageList.1.ImageTags
+├── Timestamp, Timezone
+├── hardware_source
+│   └── channel_name/id, pixel_time_us, exposure
+└── instrument.ImageScanned
+    └── EHT, aberrations (C1-C5), stage, PMT gains
+```
+
+### Calibration Comparison
+
+| Calibration | NHDF | DM3 |
+|-------------|------|-----|
+| **Spatial** | `dimensional_calibrations[i].scale/offset/units` | `Calibrations.Dimension.N.Scale/Origin/Units` |
+| **Intensity** | `intensity_calibration.scale/offset/units` | `Calibrations.Brightness.Scale/Origin/Units` |
+| **Format** | Array of objects (one per dimension) | Separate tags per dimension |
+
+### Metadata Comparison
+
+| Metadata Type | NHDF Location | DM3 Location |
+|---------------|---------------|--------------|
+| **Voltage (EHT)** | `metadata.instrument.high_tension` | `ImageTags.instrument.ImageScanned.EHT` |
+| **Pixel Time** | `metadata.hardware_source.pixel_time_us` | `ImageTags.hardware_source.pixel_time_us` |
+| **FOV** | `metadata.scan.fov_nm` | Calculated from scale × dimensions |
+| **Channel** | `metadata.hardware_source.channel_name` | `ImageTags.hardware_source.channel_name` |
+| **Timestamp** | `created` (ISO format) | `DataBar.Acquisition Date/Time` |
+| **Timezone** | `timezone`, `timezone_offset` | `ImageTags.Timezone/TimezoneOffset` |
+| **Aberrations** | `metadata.instrument.ImageScanned.C*` | `ImageTags.instrument.ImageScanned.C*` |
+| **Stage Position** | `metadata.instrument.ImageScanned.StageOut*` | `ImageTags.instrument.ImageScanned.SShft.*` |
+
+### Advantages Summary
+
+**NHDF Advantages:**
+- Based on open HDF5 standard - readable by many tools
+- Native sequence/stack support in single file
+- Compression and chunking for large datasets
+- Hierarchical structure for multiple related datasets
+- JSON metadata is human-readable and easy to parse
+- Better for large datasets (lazy loading, partial reads)
+- Nion Swift native format - preserves all acquisition metadata
+
+**DM3 Advantages:**
+- Industry standard in TEM community
+- Direct compatibility with Gatan DigitalMicrograph software
+- Smaller file overhead for single images
+- Well-supported by hyperspy, ncempy, and EM analysis packages
+- Familiar to most electron microscopists
 
 ## Development
 

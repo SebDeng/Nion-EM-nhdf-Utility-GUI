@@ -15,6 +15,14 @@ import uuid
 from typing import Optional, List, Dict, Any, Union
 from dataclasses import dataclass
 
+# Supported EM file extensions for drag-drop
+SUPPORTED_EM_EXTENSIONS = ('.nhdf', '.dm3', '.dm4')
+
+
+def is_supported_em_file(file_path: str) -> bool:
+    """Check if file path is a supported EM file format."""
+    return file_path.lower().endswith(SUPPORTED_EM_EXTENSIONS)
+
 
 @dataclass
 class WorkspaceLayout:
@@ -307,7 +315,7 @@ class WorkspacePanel(QWidget):
             for url in urls:
                 if url.isLocalFile():
                     file_path = url.toLocalFile()
-                    if file_path.lower().endswith('.nhdf'):
+                    if is_supported_em_file(file_path):
                         event.acceptProposedAction()
                         # Visual feedback - highlight the panel
                         if is_dark:
@@ -329,7 +337,7 @@ class WorkspacePanel(QWidget):
         # Also accept internal file paths (from file browser)
         if mime_data.hasText():
             text = mime_data.text()
-            if text.lower().endswith('.nhdf'):
+            if is_supported_em_file(text):
                 event.acceptProposedAction()
                 if is_dark:
                     self.content_area.setStyleSheet("""
@@ -359,13 +367,13 @@ class WorkspacePanel(QWidget):
             for url in urls:
                 if url.isLocalFile():
                     file_path = url.toLocalFile()
-                    if file_path.lower().endswith('.nhdf'):
+                    if is_supported_em_file(file_path):
                         event.acceptProposedAction()
                         return
 
         if mime_data.hasText():
             text = mime_data.text()
-            if text.lower().endswith('.nhdf'):
+            if is_supported_em_file(text):
                 event.acceptProposedAction()
                 return
 
@@ -418,7 +426,7 @@ class WorkspacePanel(QWidget):
             for url in urls:
                 if url.isLocalFile():
                     file_path = url.toLocalFile()
-                    if file_path.lower().endswith('.nhdf'):
+                    if is_supported_em_file(file_path):
                         event.acceptProposedAction()
                         # Reset visual feedback
                         if self._selected:
@@ -458,7 +466,7 @@ class WorkspacePanel(QWidget):
         # Handle text (file paths from file browser)
         if mime_data.hasText():
             file_path = mime_data.text()
-            if file_path.lower().endswith('.nhdf'):
+            if is_supported_em_file(file_path):
                 event.acceptProposedAction()
                 # Reset visual feedback
                 if self._selected:

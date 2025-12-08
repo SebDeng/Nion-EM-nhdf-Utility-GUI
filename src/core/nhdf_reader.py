@@ -1,6 +1,6 @@
 """
-nhdf file reader module.
-Handles loading Nion nhdf (HDF5-based) files and extracting data/metadata.
+EM file reader module.
+Handles loading Nion nhdf (HDF5-based) files and Gatan DM3/DM4 files.
 """
 
 import h5py
@@ -14,6 +14,13 @@ from typing import Any, Optional, Dict, List, Tuple
 from nion.data import Calibration
 from nion.data import DataAndMetadata
 from nion.utils import Converter
+
+# Try to import ncempy for DM3/DM4 support
+try:
+    import ncempy.io.dm as dm
+    HAS_NCEMPY = True
+except ImportError:
+    HAS_NCEMPY = False
 
 
 @dataclass
@@ -374,20 +381,300 @@ class NHDFReader:
             }
 
 
-# Global reader instance
-_reader = NHDFReader()
+class DM3Reader:
+    """Reader for Gatan DM3/DM4 files."""
+
+    def __init__(self):
+        self._cache: Dict[str, NHDFData] = {}
+
+    def can_read(self) -> bool:
+        """Check if DM3/DM4 reading is available."""
+        return HAS_NCEMPY
+
+    def read(self, path: pathlib.Path, use_cache: bool = True) -> NHDFData:
+        """
+        Read a DM3/DM4 file and return the data in NHDFData format.
+
+        Args:
+            path: Path to the DM3/DM4 file
+            use_cache: Whether to use cached data if available
+
+        Returns:
+            NHDFData object containing the data and metadata
+        """
+        if not HAS_NCEMPY:
+            raise ImportError(
+                "ncempy is required to read DM3/DM4 files. "
+                "Install with: pip install ncempy"
+            )
+
+        path = pathlib.Path(path)
+        cache_key = str(path.resolve())
+
+        if use_cache and cache_key in self._cache:
+            return self._cache[cache_key]
+
+        if not path.exists():
+            raise FileNotFoundError(f"File not found: {path}")
+
+        suffix = path.suffix.lower()
+        if suffix not in ('.dm3', '.dm4'):
+            raise ValueError(f"Not a DM3/DM4 file: {path}")
+
+        # Read the DM file
+        dmfile = dm.fileDM(str(path))
+
+        # Get the first dataset (most DM files have only one)
+        if dmfile.numObjects < 1:
+            raise ValueError(f"No datasets found in {path}")
+
+        dataset = dmfile.getDataset(0)
+        data = dataset['data']
+
+        # Get calibrations from dataset
+        pixel_size = dataset.get('pixelSize', [1.0] * data.ndim)
+        pixel_unit = dataset.get('pixelUnit', [''] * data.ndim)
+        pixel_origin = dataset.get('pixelOrigin', [0.0] * data.ndim)
+
+        # Create calibrations (DM uses origin as center, we convert to offset)
+        dimensional_calibrations = []
+        for i in range(data.ndim):
+            scale = pixel_size[i] if i < len(pixel_size) else 1.0
+            units = pixel_unit[i] if i < len(pixel_unit) else ''
+            origin = pixel_origin[i] if i < len(pixel_origin) else 0.0
+            # DM origin is the coordinate of pixel 0, convert to offset
+            offset = -origin * scale
+            dimensional_calibrations.append(CalibrationInfo(
+                offset=offset,
+                scale=scale,
+                units=units
+            ))
+
+        # Get intensity calibration from tags
+        all_tags = dmfile.allTags
+        intensity_scale = all_tags.get('.ImageList.1.ImageData.Calibrations.Brightness.Scale', 1.0)
+        intensity_offset = all_tags.get('.ImageList.1.ImageData.Calibrations.Brightness.Origin', 0.0)
+        intensity_units = all_tags.get('.ImageList.1.ImageData.Calibrations.Brightness.Units', '')
+
+        intensity_calibration = CalibrationInfo(
+            offset=float(intensity_offset) if intensity_offset else 0.0,
+            scale=float(intensity_scale) if intensity_scale else 1.0,
+            units=str(intensity_units) if intensity_units else ''
+        )
+
+        # Determine if this is a sequence (3D data)
+        is_sequence = data.ndim == 3
+        datum_dim_count = 2 if data.ndim >= 2 else data.ndim
+
+        data_descriptor = DataDescriptor(
+            is_sequence=is_sequence,
+            collection_dimension_count=0,
+            datum_dimension_count=datum_dim_count
+        )
+
+        # Extract metadata from tags
+        metadata = self._extract_metadata(all_tags)
+
+        # Parse timestamp
+        timestamp = None
+        timestamp_str = all_tags.get('.ImageList.1.ImageTags.Timestamp', '')
+        if timestamp_str:
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str)
+            except Exception:
+                pass
+
+        # Also try DataBar timestamp
+        if timestamp is None:
+            acq_date = all_tags.get('.DataBar.Acquisition Date', '')
+            acq_time = all_tags.get('.DataBar.Acquisition Time', '')
+            if acq_date and acq_time:
+                try:
+                    # Parse MM/DD/YY and HH:MM:SS format
+                    dt_str = f"{acq_date} {acq_time.split()[0]}"  # Remove timezone suffix
+                    timestamp = datetime.strptime(dt_str, "%m/%d/%y %H:%M:%S")
+                except Exception:
+                    pass
+
+        timezone = all_tags.get('.ImageList.1.ImageTags.Timezone')
+        timezone_offset = all_tags.get('.ImageList.1.ImageTags.TimezoneOffset')
+
+        # Build raw properties dict (similar to nhdf format)
+        raw_properties = {
+            'type': 'dm-data-item',
+            'data_shape': list(data.shape),
+            'data_dtype': str(data.dtype),
+            'is_sequence': is_sequence,
+            'dimensional_calibrations': [
+                {'offset': c.offset, 'scale': c.scale, 'units': c.units}
+                for c in dimensional_calibrations
+            ],
+            'intensity_calibration': {
+                'offset': intensity_calibration.offset,
+                'scale': intensity_calibration.scale,
+                'units': intensity_calibration.units
+            },
+            'metadata': metadata,
+            'source_format': 'dm3' if suffix == '.dm3' else 'dm4'
+        }
+
+        # Create result object
+        result = NHDFData(
+            file_path=path,
+            data=data,
+            data_descriptor=data_descriptor,
+            intensity_calibration=intensity_calibration,
+            dimensional_calibrations=dimensional_calibrations,
+            metadata=metadata,
+            timestamp=timestamp,
+            timezone=timezone,
+            timezone_offset=timezone_offset,
+            raw_properties=raw_properties
+        )
+
+        if use_cache:
+            self._cache[cache_key] = result
+
+        return result
+
+    def _extract_metadata(self, tags: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract metadata from DM tags into nhdf-compatible structure."""
+        metadata = {}
+
+        # Hardware source info
+        hw_prefix = '.ImageList.1.ImageTags.hardware_source.'
+        hardware_source = {}
+        for key, val in tags.items():
+            if key.startswith(hw_prefix):
+                short_key = key[len(hw_prefix):]
+                hardware_source[short_key] = val
+        if hardware_source:
+            metadata['hardware_source'] = hardware_source
+
+        # Instrument info
+        inst_prefix = '.ImageList.1.ImageTags.instrument.'
+        instrument = {}
+        for key, val in tags.items():
+            if key.startswith(inst_prefix):
+                short_key = key[len(inst_prefix):]
+                # Handle nested keys like ImageScanned.EHT
+                parts = short_key.split('.')
+                current = instrument
+                for part in parts[:-1]:
+                    if part not in current:
+                        current[part] = {}
+                    current = current[part]
+                current[parts[-1]] = val
+        if instrument:
+            metadata['instrument'] = instrument
+
+        # Scan info
+        scan_prefix = '.ImageList.1.ImageTags.scan.'
+        scan = {}
+        for key, val in tags.items():
+            if key.startswith(scan_prefix):
+                short_key = key[len(scan_prefix):]
+                scan[short_key] = val
+        if scan:
+            metadata['scan'] = scan
+
+        return metadata
+
+    def clear_cache(self, path: Optional[pathlib.Path] = None):
+        """Clear the cache, optionally for a specific file."""
+        if path is None:
+            self._cache.clear()
+        else:
+            cache_key = str(pathlib.Path(path).resolve())
+            self._cache.pop(cache_key, None)
+
+    def get_file_info(self, path: pathlib.Path) -> Dict[str, Any]:
+        """Get basic info about a DM3/DM4 file without loading all data."""
+        if not HAS_NCEMPY:
+            return {"error": "ncempy not installed"}
+
+        path = pathlib.Path(path)
+
+        try:
+            dmfile = dm.fileDM(str(path))
+            if dmfile.numObjects < 1:
+                return {"error": "No datasets"}
+
+            dataset = dmfile.getDataset(0)
+            data_shape = dataset['data'].shape
+            data_dtype = str(dataset['data'].dtype)
+
+            all_tags = dmfile.allTags
+            timestamp = all_tags.get('.ImageList.1.ImageTags.Timestamp', '')
+
+            return {
+                "shape": data_shape,
+                "dtype": data_dtype,
+                "is_sequence": len(data_shape) == 3,
+                "num_frames": data_shape[0] if len(data_shape) == 3 else 1,
+                "created": timestamp,
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+
+# Global reader instances
+_nhdf_reader = NHDFReader()
+_dm3_reader = DM3Reader()
 
 
 def read_nhdf(path: pathlib.Path, use_cache: bool = True) -> NHDFData:
     """Convenience function to read an nhdf file."""
-    return _reader.read(path, use_cache)
+    return _nhdf_reader.read(path, use_cache)
+
+
+def read_dm3(path: pathlib.Path, use_cache: bool = True) -> NHDFData:
+    """Convenience function to read a DM3/DM4 file."""
+    return _dm3_reader.read(path, use_cache)
+
+
+def read_em_file(path: pathlib.Path, use_cache: bool = True) -> NHDFData:
+    """
+    Read an EM file (nhdf, dm3, or dm4) and return data in NHDFData format.
+
+    Automatically detects file type based on extension.
+    """
+    path = pathlib.Path(path)
+    suffix = path.suffix.lower()
+
+    if suffix == '.nhdf':
+        return _nhdf_reader.read(path, use_cache)
+    elif suffix in ('.dm3', '.dm4'):
+        return _dm3_reader.read(path, use_cache)
+    else:
+        raise ValueError(f"Unsupported file format: {suffix}. Supported: .nhdf, .dm3, .dm4")
 
 
 def get_file_info(path: pathlib.Path) -> Dict[str, Any]:
-    """Convenience function to get file info."""
-    return _reader.get_file_info(path)
+    """Convenience function to get file info for any supported format."""
+    path = pathlib.Path(path)
+    suffix = path.suffix.lower()
+
+    if suffix == '.nhdf':
+        return _nhdf_reader.get_file_info(path)
+    elif suffix in ('.dm3', '.dm4'):
+        return _dm3_reader.get_file_info(path)
+    else:
+        return {"error": f"Unsupported format: {suffix}"}
 
 
 def clear_cache(path: Optional[pathlib.Path] = None):
-    """Convenience function to clear cache."""
-    _reader.clear_cache(path)
+    """Convenience function to clear cache for all readers."""
+    _nhdf_reader.clear_cache(path)
+    _dm3_reader.clear_cache(path)
+
+
+def is_supported_file(path: pathlib.Path) -> bool:
+    """Check if a file is a supported EM format."""
+    suffix = pathlib.Path(path).suffix.lower()
+    return suffix in ('.nhdf', '.dm3', '.dm4')
+
+
+def get_supported_extensions() -> List[str]:
+    """Get list of supported file extensions."""
+    return ['.nhdf', '.dm3', '.dm4']

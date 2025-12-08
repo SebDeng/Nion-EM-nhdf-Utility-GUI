@@ -13,7 +13,7 @@ from PySide6.QtGui import QAction, QKeySequence, QPixmap
 import pathlib
 from typing import Optional
 
-from src.core.nhdf_reader import NHDFData, read_nhdf
+from src.core.nhdf_reader import NHDFData, read_em_file
 from src.gui.file_browser import FileBrowserPanel
 from src.gui.display_panel import DisplayPanel
 from src.gui.metadata_panel import MetadataPanel
@@ -197,12 +197,12 @@ class MainWindow(QMainWindow):
     # --- File operations ---
 
     def _on_open_file(self):
-        """Open a file dialog to select an nhdf file."""
+        """Open a file dialog to select an EM data file."""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Open nhdf File",
+            "Open EM File",
             str(self._file_browser.current_path or pathlib.Path.home()),
-            "nhdf Files (*.nhdf);;All Files (*)"
+            "EM Files (*.nhdf *.dm3 *.dm4);;nhdf Files (*.nhdf);;DM Files (*.dm3 *.dm4);;All Files (*)"
         )
         if file_path:
             self._load_file(pathlib.Path(file_path))
@@ -239,12 +239,12 @@ class MainWindow(QMainWindow):
             pass
 
     def _load_file(self, path: pathlib.Path):
-        """Load an nhdf file."""
+        """Load an EM data file (nhdf, dm3, dm4)."""
         try:
             self._statusbar.showMessage(f"Loading {path.name}...")
             QApplication.processEvents()
 
-            data = read_nhdf(path)
+            data = read_em_file(path)
             self._current_data = data
             self.file_loaded.emit(data)
 

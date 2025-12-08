@@ -1,5 +1,5 @@
 """
-File browser panel for navigating and selecting nhdf files.
+File browser panel for navigating and selecting EM data files (nhdf, dm3, dm4).
 """
 
 from PySide6.QtWidgets import (
@@ -40,8 +40,9 @@ class DraggableTreeView(QTreeView):
         # Get file path
         file_path = source_model.filePath(source_index)
 
-        # Only allow dragging of nhdf files
-        if not file_path.lower().endswith('.nhdf'):
+        # Only allow dragging of supported EM files
+        supported_extensions = ('.nhdf', '.dm3', '.dm4')
+        if not file_path.lower().endswith(supported_extensions):
             return
 
         # Create mime data
@@ -60,20 +61,23 @@ class DraggableTreeView(QTreeView):
         drag.exec(Qt.CopyAction)
 
 
-class NHDFFilterProxyModel(QSortFilterProxyModel):
-    """Proxy model to filter for nhdf files and directories."""
+class EMFileFilterProxyModel(QSortFilterProxyModel):
+    """Proxy model to filter for EM data files (nhdf, dm3, dm4) and directories."""
+
+    # Supported file extensions
+    SUPPORTED_EXTENSIONS = ('.nhdf', '.dm3', '.dm4')
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._show_all_files = False
 
     def set_show_all_files(self, show: bool):
-        """Toggle between showing all files or only nhdf files."""
+        """Toggle between showing all files or only EM data files."""
         self._show_all_files = show
         self.invalidateFilter()
 
     def filterAcceptsRow(self, source_row: int, source_parent: QModelIndex) -> bool:
-        """Filter to show only directories and nhdf files."""
+        """Filter to show only directories and supported EM files."""
         model = self.sourceModel()
         index = model.index(source_row, 0, source_parent)
 
@@ -84,7 +88,11 @@ class NHDFFilterProxyModel(QSortFilterProxyModel):
             return True
 
         file_path = model.filePath(index)
-        return file_path.lower().endswith('.nhdf')
+        return file_path.lower().endswith(self.SUPPORTED_EXTENSIONS)
+
+
+# Keep old name for backwards compatibility
+NHDFFilterProxyModel = EMFileFilterProxyModel
 
 
 class FileBrowserPanel(QWidget):

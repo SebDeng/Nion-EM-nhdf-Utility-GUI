@@ -19,6 +19,7 @@ class WorkspaceDisplayPanel(WorkspacePanel):
 
     # Signals
     data_loaded = Signal(object)  # Emits NHDFData when data is loaded
+    frame_changed = Signal(int)  # Forwarded from DisplayPanel when frame changes
 
     def __init__(self, panel_id: Optional[str] = None, parent=None):
         super().__init__(panel_id, parent)
@@ -32,6 +33,9 @@ class WorkspaceDisplayPanel(WorkspacePanel):
         """Set up the display panel within this workspace panel."""
         # Create display panel without controls (they'll be in unified panel)
         self.display_panel = DisplayPanel(show_controls=False)
+
+        # Forward frame_changed signal from DisplayPanel
+        self.display_panel.frame_changed.connect(self.frame_changed.emit)
 
         # Set it as content
         self.set_content(self.display_panel)

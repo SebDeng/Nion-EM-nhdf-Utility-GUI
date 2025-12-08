@@ -19,6 +19,7 @@ class AnalysisToolBar(QToolBar):
     width_changed = Signal(int)  # Emitted when line width is changed
     unit_changed = Signal(str)  # Emitted when x-axis unit is changed
     export_requested = Signal()  # Emitted when export button is clicked
+    show_histogram = Signal()  # Emitted when show histogram is clicked
 
     def __init__(self, parent=None):
         super().__init__("Analysis Tools", parent)
@@ -82,6 +83,15 @@ class AnalysisToolBar(QToolBar):
         self._clear_action.triggered.connect(self._on_clear_all)
         self.addAction(self._clear_action)
 
+        self.addSeparator()
+
+        # Show Histogram button
+        self._histogram_action = QAction("Show Histogram", self)
+        self._histogram_action.setToolTip("Show intensity histogram (H)")
+        self._histogram_action.setShortcut("H")
+        self._histogram_action.triggered.connect(self._on_show_histogram)
+        self.addAction(self._histogram_action)
+
     def _on_create_line_profile(self):
         """Handle create line profile button click."""
         self.create_line_profile.emit()
@@ -101,6 +111,10 @@ class AnalysisToolBar(QToolBar):
     def _on_export(self):
         """Handle export button click."""
         self.export_requested.emit()
+
+    def _on_show_histogram(self):
+        """Handle show histogram button click."""
+        self.show_histogram.emit()
 
     def set_theme(self, is_dark: bool):
         """Update toolbar theme."""

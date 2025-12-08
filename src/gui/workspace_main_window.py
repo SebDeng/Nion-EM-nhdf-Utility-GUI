@@ -16,7 +16,7 @@ import pathlib
 import json
 from typing import Optional, Dict, List
 
-from src.core.nhdf_reader import NHDFData, read_nhdf
+from src.core.nhdf_reader import NHDFData, read_em_file, is_supported_file
 from src.gui.file_browser import FileBrowserPanel
 from src.gui.metadata_panel import MetadataPanel
 from src.gui.export_dialog import ExportDialog
@@ -79,6 +79,7 @@ class WorkspaceMainWindow(QMainWindow):
         self._analysis_toolbar.width_changed.connect(self._on_line_width_changed)
         self._analysis_toolbar.unit_changed.connect(self._on_unit_changed)
         self._analysis_toolbar.export_requested.connect(self._on_export_plot)
+        self._analysis_toolbar.show_histogram.connect(self._on_show_histogram)
         central_layout.addWidget(self._analysis_toolbar)
 
         # Create mode manager with tabbed workspace/processing
@@ -828,8 +829,9 @@ class WorkspaceMainWindow(QMainWindow):
 
     def _on_create_line_profile(self):
         """Handle create line profile button click."""
-        # Show analysis dock
+        # Show analysis dock and switch to line profile tab
         self._analysis_dock.setVisible(True)
+        self._analysis_panel.show_line_profile_tab()
 
         # Get the selected panel and create a line profile on it
         if self._workspace and self._workspace.selected_panel:
@@ -837,6 +839,18 @@ class WorkspaceMainWindow(QMainWindow):
             if isinstance(panel, WorkspaceDisplayPanel):
                 if hasattr(panel, 'display_panel') and panel.display_panel:
                     panel.display_panel.create_line_profile()
+
+    def _on_show_histogram(self):
+        """Handle show histogram button click."""
+        # Show analysis dock and switch to histogram tab
+        self._analysis_dock.setVisible(True)
+        self._analysis_panel.show_histogram_tab()
+
+        # Update histogram for current panel
+        if self._workspace and self._workspace.selected_panel:
+            panel = self._workspace.selected_panel
+            if isinstance(panel, WorkspaceDisplayPanel):
+                self._update_histogram_for_panel(panel)
 
     def _on_clear_analysis(self):
         """Handle clear analysis request."""
@@ -983,6 +997,9 @@ class WorkspaceMainWindow(QMainWindow):
         if isinstance(panel, WorkspaceDisplayPanel):
             panel.data_loaded.connect(lambda data: self._on_data_loaded_in_panel(panel, data))
 
+            # Connect frame_changed to update histogram when frame changes
+            panel.frame_changed.connect(lambda frame: self._on_frame_changed_in_panel(panel, frame))
+
             # Apply current theme to new panel
             if hasattr(panel, 'set_theme'):
                 panel.set_theme(self._is_dark_mode)
@@ -1010,9 +1027,17 @@ class WorkspaceMainWindow(QMainWindow):
             if panel.current_data:
                 self._metadata_panel.set_data(panel.current_data)
                 self._statusbar.showMessage(panel.current_data.get_summary())
+                # Update histogram for the selected panel
+                self._update_histogram_for_panel(panel)
+                # Update line profile for the selected panel
+                self._update_line_profile_for_panel(panel)
         else:
             self._current_display_panel = None
             self._metadata_panel.clear()
+            # Clear analysis widgets when no display panel is selected
+            if hasattr(self, '_analysis_panel'):
+                self._analysis_panel._histogram_widget.clear_histogram()
+                self._analysis_panel._line_profile_widget.clear_plot()
 
         self._update_export_actions()
 
@@ -1023,6 +1048,55 @@ class WorkspaceMainWindow(QMainWindow):
         else:
             self._unified_controls.set_current_panel(None)
 
+    def _on_frame_changed_in_panel(self, panel: WorkspaceDisplayPanel, frame: int):
+        """Handle frame change in a panel - update histogram if this is the selected panel."""
+        if panel == self._workspace.selected_panel:
+            self._update_histogram_for_panel(panel)
+
+    def _update_histogram_for_panel(self, panel: WorkspaceDisplayPanel):
+        """Update the histogram display for the given panel."""
+        if not hasattr(self, '_analysis_panel'):
+            return
+
+        if not isinstance(panel, WorkspaceDisplayPanel) or not panel.current_data:
+            self._analysis_panel._histogram_widget.clear_histogram()
+            return
+
+        # Get current frame data
+        data = panel.current_data
+        display_panel = panel.display_panel if hasattr(panel, 'display_panel') else None
+
+        if display_panel:
+            current_frame = display_panel.current_frame
+            frame_data = data.get_frame(current_frame)
+
+            # Get display range from the panel
+            display_range = panel.get_display_range()
+
+            # Update the histogram
+            self._analysis_panel.update_histogram(frame_data, display_range)
+
+    def _update_line_profile_for_panel(self, panel: WorkspaceDisplayPanel):
+        """Update the line profile display for the given panel."""
+        if not hasattr(self, '_analysis_panel'):
+            return
+
+        if not isinstance(panel, WorkspaceDisplayPanel) or not panel.current_data:
+            self._analysis_panel._line_profile_widget.clear_plot()
+            return
+
+        # Get the display panel and its line profile overlay
+        display_panel = panel.display_panel if hasattr(panel, 'display_panel') else None
+
+        if display_panel and hasattr(display_panel, '_line_profile_overlay'):
+            overlay = display_panel._line_profile_overlay
+            if overlay and overlay.has_active_profile():
+                # Refresh the profile to re-emit the data
+                overlay.refresh_profile()
+            else:
+                # No active line profile on this panel, clear the widget
+                self._analysis_panel._line_profile_widget.clear_plot()
+
     def _on_layout_changed(self):
         """Handle workspace layout change."""
         self._statusbar.showMessage(f"Workspace: {len(self._workspace.panels)} panels", 2000)
@@ -1032,6 +1106,8 @@ class WorkspaceMainWindow(QMainWindow):
         if panel == self._workspace.selected_panel:
             self._metadata_panel.set_data(data)
             self._statusbar.showMessage(data.get_summary())
+            # Update histogram when data is loaded
+            self._update_histogram_for_panel(panel)
 
         self._update_export_actions()
 
@@ -1048,7 +1124,7 @@ class WorkspaceMainWindow(QMainWindow):
             self,
             "Open nhdf File",
             str(self._file_browser.current_path or pathlib.Path.home()),
-            "nhdf Files (*.nhdf);;All Files (*)"
+            "EM Files (*.nhdf *.dm3 *.dm4);;nhdf Files (*.nhdf);;DM Files (*.dm3 *.dm4);;All Files (*)"
         )
         if file_path:
             self._load_file_in_current_panel(pathlib.Path(file_path))
@@ -1059,7 +1135,7 @@ class WorkspaceMainWindow(QMainWindow):
             self,
             "Open nhdf File in New Panel",
             str(self._file_browser.current_path or pathlib.Path.home()),
-            "nhdf Files (*.nhdf);;All Files (*)"
+            "EM Files (*.nhdf *.dm3 *.dm4);;nhdf Files (*.nhdf);;DM Files (*.dm3 *.dm4);;All Files (*)"
         )
         if file_path:
             # Split current panel vertically and load file in new panel
@@ -1171,7 +1247,7 @@ class WorkspaceMainWindow(QMainWindow):
             # Check if already loaded
             str_path = str(path)
             if str_path not in self._loaded_files:
-                data = read_nhdf(path)
+                data = read_em_file(path)
                 self._loaded_files[str_path] = data
             else:
                 data = self._loaded_files[str_path]

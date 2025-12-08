@@ -478,3 +478,12 @@ class LineProfileOverlay(QObject):
         y2 = roi_pos.y() + p2.y()
 
         return ((x1, y1), (x2, y2))
+
+    def has_active_profile(self) -> bool:
+        """Check if there is an active line profile."""
+        return self.line_roi is not None
+
+    def refresh_profile(self):
+        """Re-extract and emit the current profile data (used when switching panels)."""
+        if self.line_roi is not None and self.image_item.image is not None:
+            self._extract_profile()
