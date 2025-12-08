@@ -3,12 +3,13 @@ Line profile plotting widget using pyqtgraph.
 """
 
 import pyqtgraph as pg
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFileDialog
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFileDialog, QMessageBox
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QPixmap, QFont
 import numpy as np
 from typing import Optional, Dict, Any
 import pyqtgraph.exporters
+from src.gui.line_profile_export_dialog import LineProfileExportDialog
 
 
 class LineProfileWidget(QWidget):
@@ -125,36 +126,119 @@ class LineProfileWidget(QWidget):
                 self.update_profile(self._current_profile_id, self._current_data)
 
     def export_plot(self):
-        """Export the current plot as an image file."""
+        """Export the current plot as an image file with customization options."""
         if not self._current_data:
+            QMessageBox.warning(self, "No Data", "No line profile data to export.")
             return
 
-        # Open file dialog
-        file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Export Line Profile Plot",
-            "line_profile.png",
-            "PNG Files (*.png);;JPEG Files (*.jpg *.jpeg);;All Files (*)"
-        )
+        # Prepare plot data for the dialog
+        plot_data = self._current_data.copy()
+        plot_data['unit'] = self._current_unit
 
-        if file_path:
-            # Create an exporter based on file extension
-            if file_path.lower().endswith(('.jpg', '.jpeg')):
-                # Use ImageExporter for JPEG
-                exporter = pg.exporters.ImageExporter(self._plot_widget.plotItem)
-                exporter.parameters()['width'] = 800  # Set resolution
-                exporter.parameters()['height'] = 600
-                exporter.export(file_path)
+        # Open export dialog
+        dialog = LineProfileExportDialog(plot_data, self)
+
+        if dialog.exec_() == LineProfileExportDialog.Accepted:
+            settings = dialog.get_export_settings()
+            self._export_with_settings(settings)
+
+    def _export_with_settings(self, settings: Dict[str, Any]):
+        """Export the plot with custom settings."""
+        try:
+            # Create a new plot widget for export with custom settings
+            export_plot = pg.PlotWidget()
+
+            # Apply theme settings
+            if settings['theme'] == 'light':
+                export_plot.setBackground('w')
+                text_color = 'k'
+                grid_color = (100, 100, 100)
+            elif settings['theme'] == 'dark':
+                export_plot.setBackground('#1e1e1e')
+                text_color = 'w'
+                grid_color = (200, 200, 200)
             else:
-                # Default to PNG
-                if not file_path.lower().endswith('.png'):
-                    file_path += '.png'
-                exporter = pg.exporters.ImageExporter(self._plot_widget.plotItem)
-                exporter.parameters()['width'] = 800
-                exporter.parameters()['height'] = 600
-                exporter.export(file_path)
+                # Use current theme
+                export_plot.setBackground(self._plot_widget.backgroundBrush().color())
+                text_color = 'w' if self._is_dark_mode else 'k'
+                grid_color = (200, 200, 200) if self._is_dark_mode else (100, 100, 100)
 
-            print(f"Line profile exported to: {file_path}")
+            # Set title and labels
+            export_plot.setTitle(settings['title'], color=text_color, size='14pt')
+
+            # Determine unit for x-axis
+            unit_label = self._current_unit if hasattr(self, '_current_unit') else 'px'
+            export_plot.setLabel('left', settings['y_label'], color=text_color)
+            export_plot.setLabel('bottom', settings['x_label'], units=unit_label, color=text_color)
+
+            # Set grid
+            if settings['show_grid']:
+                export_plot.showGrid(x=True, y=True, alpha=settings['grid_alpha'])
+
+            # Prepare data
+            if 'values' in self._current_data and 'distances' in self._current_data:
+                values = np.array(self._current_data['values'])
+                distances = np.array(self._current_data['distances'])
+
+                # Apply unit conversion
+                if self._current_unit == "nm" and 'calibration' in self._current_data and self._current_data['calibration']:
+                    distances = distances * self._current_data['calibration']
+
+                # Plot the data with custom line style
+                pen = pg.mkPen(color=settings['line_color'], width=settings['line_width'])
+                export_plot.plot(distances, values, pen=pen)
+
+                # Set axis ranges if specified
+                if settings['x_range']:
+                    export_plot.setXRange(settings['x_range'][0], settings['x_range'][1])
+                else:
+                    export_plot.enableAutoRange(axis='x')
+
+                if settings['y_range']:
+                    export_plot.setYRange(settings['y_range'][0], settings['y_range'][1])
+                else:
+                    export_plot.enableAutoRange(axis='y')
+
+                # Add statistics text if requested
+                if settings['show_statistics'] and len(values) > 0:
+                    mean_val = np.mean(values)
+                    std_val = np.std(values)
+                    min_val = np.min(values)
+                    max_val = np.max(values)
+
+                    stats_text = f"Mean: {mean_val:.3f} | Std: {std_val:.3f} | Min: {min_val:.3f} | Max: {max_val:.3f}"
+
+                    # Add text item at the bottom
+                    text_item = pg.TextItem(stats_text, color=text_color, anchor=(0.5, 1))
+                    text_item.setFont(QFont("Arial", 10))
+                    export_plot.addItem(text_item)
+
+                    # Position at bottom center
+                    view_range = export_plot.viewRange()
+                    if view_range:
+                        x_center = (view_range[0][0] + view_range[0][1]) / 2
+                        y_bottom = view_range[1][0] + (view_range[1][1] - view_range[1][0]) * 0.05
+                        text_item.setPos(x_center, y_bottom)
+
+            # Export the plot
+            exporter = pg.exporters.ImageExporter(export_plot.plotItem)
+            exporter.parameters()['width'] = settings['width']
+            exporter.parameters()['height'] = settings['height']
+            exporter.export(settings['file_path'])
+
+            # Show success message
+            QMessageBox.information(
+                self,
+                "Export Successful",
+                f"Line profile plot exported to:\n{settings['file_path']}"
+            )
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Export Failed",
+                f"Failed to export plot:\n{str(e)}"
+            )
 
     def set_theme(self, is_dark: bool):
         """Update the widget theme."""
