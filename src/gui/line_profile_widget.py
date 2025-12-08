@@ -3,10 +3,12 @@ Line profile plotting widget using pyqtgraph.
 """
 
 import pyqtgraph as pg
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QFileDialog
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap
 import numpy as np
 from typing import Optional, Dict, Any
+import pyqtgraph.exporters
 
 
 class LineProfileWidget(QWidget):
@@ -16,6 +18,8 @@ class LineProfileWidget(QWidget):
         super().__init__(parent)
         self._is_dark_mode = True
         self._current_profile_id = None
+        self._current_unit = "nm"  # Default unit
+        self._current_data = None  # Store data for unit changes
         self._setup_ui()
         self._apply_theme()
 
@@ -53,16 +57,32 @@ class LineProfileWidget(QWidget):
 
         Args:
             profile_id: Profile identifier
-            data: Dictionary containing 'distances' and 'values' arrays
+            data: Dictionary containing 'distances' and 'values' arrays, optionally 'calibration'
         """
         self._current_profile_id = profile_id
+        self._current_data = data  # Store for unit changes
 
         if 'values' in data and 'distances' in data:
             values = np.array(data['values'])
             distances = np.array(data['distances']) if len(data['distances']) == len(values) else np.arange(len(values))
 
+            # Convert distances based on current unit setting
+            display_distances = distances.copy()
+            unit_label = "px"
+
+            if self._current_unit == "nm" and 'calibration' in data and data['calibration']:
+                # Convert from pixels to nm
+                display_distances = distances * data['calibration']
+                unit_label = "nm"
+            else:
+                # Keep in pixels
+                unit_label = "px"
+
             # Update plot
-            self._plot_curve.setData(distances, values)
+            self._plot_curve.setData(display_distances, values)
+
+            # Update axis label with correct unit
+            self._plot_widget.setLabel('bottom', 'Distance', units=unit_label)
 
             # Auto-range to fit data
             self._plot_widget.enableAutoRange()
@@ -94,6 +114,47 @@ class LineProfileWidget(QWidget):
         self._info_label.setText("")
         self._title_label.setText("Line Profile")
         self._current_profile_id = None
+        self._current_data = None
+
+    def set_unit(self, unit: str):
+        """Change the display unit (px or nm)."""
+        if unit != self._current_unit:
+            self._current_unit = unit
+            # Re-plot with new units if we have data
+            if self._current_data and self._current_profile_id:
+                self.update_profile(self._current_profile_id, self._current_data)
+
+    def export_plot(self):
+        """Export the current plot as an image file."""
+        if not self._current_data:
+            return
+
+        # Open file dialog
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Line Profile Plot",
+            "line_profile.png",
+            "PNG Files (*.png);;JPEG Files (*.jpg *.jpeg);;All Files (*)"
+        )
+
+        if file_path:
+            # Create an exporter based on file extension
+            if file_path.lower().endswith(('.jpg', '.jpeg')):
+                # Use ImageExporter for JPEG
+                exporter = pg.exporters.ImageExporter(self._plot_widget.plotItem)
+                exporter.parameters()['width'] = 800  # Set resolution
+                exporter.parameters()['height'] = 600
+                exporter.export(file_path)
+            else:
+                # Default to PNG
+                if not file_path.lower().endswith('.png'):
+                    file_path += '.png'
+                exporter = pg.exporters.ImageExporter(self._plot_widget.plotItem)
+                exporter.parameters()['width'] = 800
+                exporter.parameters()['height'] = 600
+                exporter.export(file_path)
+
+            print(f"Line profile exported to: {file_path}")
 
     def set_theme(self, is_dark: bool):
         """Update the widget theme."""

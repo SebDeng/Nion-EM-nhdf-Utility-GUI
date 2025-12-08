@@ -590,6 +590,16 @@ class DisplayPanel(QWidget):
         self._frame_controls.set_num_frames(data.num_frames)
         self._frame_controls.set_current_frame(0)
 
+        # Set calibration on line profile overlay if available
+        if self._line_profile_overlay and data.dimensional_calibrations:
+            # Get the first spatial calibration (usually x-axis)
+            # Skip sequence dimension if present
+            spatial_cals = data.dimensional_calibrations
+            if data.data_descriptor.is_sequence and len(spatial_cals) > 1:
+                spatial_cals = spatial_cals[1:]  # Skip sequence dimension
+            if spatial_cals:
+                self._line_profile_overlay.calibration = spatial_cals[0]
+
         # Update display
         self._update_display()
 

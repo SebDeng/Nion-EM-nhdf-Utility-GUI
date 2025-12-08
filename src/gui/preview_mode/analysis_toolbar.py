@@ -3,7 +3,7 @@ Analysis toolbar for preview mode.
 Provides tools for examining and analyzing nhdf data.
 """
 
-from PySide6.QtWidgets import QToolBar, QWidget, QSpinBox, QLabel
+from PySide6.QtWidgets import QToolBar, QWidget, QSpinBox, QLabel, QComboBox
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction, QIcon
 
@@ -17,6 +17,8 @@ class AnalysisToolBar(QToolBar):
     create_line_profile = Signal()  # Emitted when create line profile is clicked
     clear_requested = Signal()  # Emitted when clear button is clicked
     width_changed = Signal(int)  # Emitted when line width is changed
+    unit_changed = Signal(str)  # Emitted when x-axis unit is changed
+    export_requested = Signal()  # Emitted when export button is clicked
 
     def __init__(self, parent=None):
         super().__init__("Analysis Tools", parent)
@@ -53,6 +55,27 @@ class AnalysisToolBar(QToolBar):
 
         self.addSeparator()
 
+        # X-axis unit selector
+        unit_label = QLabel(" Unit: ")
+        self.addWidget(unit_label)
+
+        self._unit_combo = QComboBox()
+        self._unit_combo.addItems(["nm", "px"])
+        self._unit_combo.setCurrentText("nm")  # Default to nm
+        self._unit_combo.setToolTip("X-axis unit for line profile")
+        self._unit_combo.currentTextChanged.connect(self._on_unit_changed)
+        self.addWidget(self._unit_combo)
+
+        self.addSeparator()
+
+        # Export button
+        self._export_action = QAction("Export Plot", self)
+        self._export_action.setToolTip("Export line profile plot as image")
+        self._export_action.triggered.connect(self._on_export)
+        self.addAction(self._export_action)
+
+        self.addSeparator()
+
         # Clear all button
         self._clear_action = QAction("Clear Line Profiles", self)
         self._clear_action.setToolTip("Clear all line profiles")
@@ -70,6 +93,14 @@ class AnalysisToolBar(QToolBar):
     def _on_width_changed(self, value):
         """Handle width spinbox value change."""
         self.width_changed.emit(value)
+
+    def _on_unit_changed(self, unit):
+        """Handle unit combo box change."""
+        self.unit_changed.emit(unit)
+
+    def _on_export(self):
+        """Handle export button click."""
+        self.export_requested.emit()
 
     def set_theme(self, is_dark: bool):
         """Update toolbar theme."""

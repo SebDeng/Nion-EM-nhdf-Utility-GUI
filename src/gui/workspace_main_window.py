@@ -76,6 +76,8 @@ class WorkspaceMainWindow(QMainWindow):
         self._analysis_toolbar.create_line_profile.connect(self._on_create_line_profile)
         self._analysis_toolbar.clear_requested.connect(self._on_clear_analysis)
         self._analysis_toolbar.width_changed.connect(self._on_line_width_changed)
+        self._analysis_toolbar.unit_changed.connect(self._on_unit_changed)
+        self._analysis_toolbar.export_requested.connect(self._on_export_plot)
         central_layout.addWidget(self._analysis_toolbar)
 
         # Create mode manager with tabbed workspace/processing
@@ -858,6 +860,18 @@ class WorkspaceMainWindow(QMainWindow):
                         if hasattr(display, '_line_profile_overlay') and display._line_profile_overlay:
                             display._line_profile_overlay.set_line_width(width)
 
+    def _on_unit_changed(self, unit):
+        """Handle unit change from toolbar."""
+        # Update unit in the line profile widget
+        if self._analysis_panel and hasattr(self._analysis_panel, '_line_profile_widget'):
+            self._analysis_panel._line_profile_widget.set_unit(unit)
+
+    def _on_export_plot(self):
+        """Handle export plot request from toolbar."""
+        # Export the line profile plot
+        if self._analysis_panel and hasattr(self._analysis_panel, '_line_profile_widget'):
+            self._analysis_panel._line_profile_widget.export_plot()
+
     def _on_line_profile_created(self, profile_data):
         """Handle line profile creation from display panels."""
         from src.gui.line_profile_overlay import LineProfileData
@@ -871,7 +885,8 @@ class WorkspaceMainWindow(QMainWindow):
                 'distances': profile_data.distances,  # Array of distances for plotting
                 'distance': profile_data.distances[-1] if len(profile_data.distances) > 0 else 0,  # Total distance
                 'unit': profile_data.unit,
-                'width': profile_data.width if hasattr(profile_data, 'width') else 1
+                'width': profile_data.width if hasattr(profile_data, 'width') else 1,
+                'calibration': profile_data.calibration if hasattr(profile_data, 'calibration') else None
             }
             self._analysis_panel.add_line_profile(profile_data.profile_id, data_dict)
 

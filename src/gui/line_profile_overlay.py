@@ -16,10 +16,11 @@ class LineProfileData:
     start_point: Tuple[float, float]
     end_point: Tuple[float, float]
     values: np.ndarray
-    distances: np.ndarray
+    distances: np.ndarray  # In pixels
     unit: str = "px"
     profile_id: str = ""
     width: float = 1.0  # Width in pixels for averaging
+    calibration: Optional[float] = None  # nm per pixel (if available)
 
 
 class LineProfileOverlay(QObject):
@@ -46,6 +47,9 @@ class LineProfileOverlay(QObject):
         # Visual indicators for line width
         self.width_lines = []  # Lines showing the width boundaries
         self.width_fill = None  # Filled area showing the width region
+
+        # Calibration info (set by display panel)
+        self.calibration = None  # Will be set as CalibrationInfo if available
 
     def create_default_line(self):
         """Create a default line profile that can be dragged to the desired position."""
@@ -209,6 +213,11 @@ class LineProfileOverlay(QObject):
             self.profile_id_counter += 1
             self._current_profile_id = f"Profile_{self.profile_id_counter}"
 
+        # Get calibration value if available
+        cal_value = None
+        if self.calibration and hasattr(self.calibration, 'scale'):
+            cal_value = self.calibration.scale  # nm per pixel (or other unit per pixel)
+
         profile_data = LineProfileData(
             start_point=start_point,
             end_point=end_point,
@@ -216,7 +225,8 @@ class LineProfileOverlay(QObject):
             distances=distances,
             unit="px",
             profile_id=self._current_profile_id,
-            width=self.line_width
+            width=self.line_width,
+            calibration=cal_value
         )
 
         # Emit signal for live updates
