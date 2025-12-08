@@ -1,7 +1,23 @@
 # Nion EM nhdf Utility GUI
 
-A modern graphical user interface for visualizing and managing Nion electron microscopy data files in nhdf (HDF5-based) format.
+<div align="center">
+  <img src="assets/AtomELogo.png" alt="AtomE Lab Logo" width="150"/>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="assets/AE_Full_Icon.png" alt="AtomE Full Icon" width="150"/>
+</div>
 
+
+Author: Sebastian (Yusong, or Seb) Deng, at AtomE Lab (PI: Dr. Cong Su) at Yale University, Departmnet of Materials Science.
+
+This project started in order to help Seb Deng (who is me) to solve some problems encountered in his day to day research when interacting with Nion (now Bruker AXS) electron microscopes. Nion utilized nhdf files to store enormous meta data in the folder. However, the common software we use on daily basis, like Nion Swift, ImageJ fails to open the images (at least I didn't find a way to). During one imaging Session, Ben (Nion Microscopist) sent me a script developed by Chris Meyer @cmeyer, cmeyer/read_nhdf.py https://gist.github.com/cmeyer/84ca01974369d9b2841ddf8f0ff212d2, in order to read the file using python scripts. Naturally, I want to expand the script from a code to a GUI for easy and quick examine of the data. Later on we expand on it a little to give it some quick data examine capability and data processing capability (to be further developed). I hope this could be helpful to our electron microscopists friends who have little experience in coding to fully utilize the potential of Nion nhdf file formats. 
+
+The GUI is equiped with a modern graphical user interface for visualizing and managing Nion electron microscopy data files in nhdf (HDF5-based) format. Everything are designed in a similar logic as the Nion Swift software - especially in the workspace panel management perspective. Users who are familiar witth Nion Swift 16+ shall be able to use this GUI seamlessly. 
+
+*This project is primarily designed by Seb Deng, and Claude Code performs the majority of coding. Cheers to Claude Code on the excellent capability.
+
+Please send any bug or issue you noticed to sebastian.deng@yale.edu and I will try to address the issue to the best of my capabilities. Please forgive me that I am not a professional software engineer. Please also let me know if you want to contribute (actual code or ideas). 
+
+**Have FUN!!!**
 ## Features
 
 - **Free-Tiling Workspace** (Default): Nion Swift-style panel management with flexible splitting
