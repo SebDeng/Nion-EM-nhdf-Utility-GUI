@@ -1,9 +1,9 @@
 # Nion EM nhdf Utility GUI
 
 <div align="center">
-  <img src="assets/AtomELogo.png" alt="AtomE Lab Logo" width="450"/>
+  <img src="assets/AtomELogo.png" alt="AtomE Lab Logo" width="300"/>
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="assets/AE_Full_Icon.png" alt="AtomE Full Icon" width="450"/>
+  <img src="assets/AE_Full_Icon.png" alt="AtomE Full Icon" width="300"/>
 </div>
 
 
