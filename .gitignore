@@ -86,6 +86,7 @@ DEVELOPMENT_PLAN.md
 # Technical documentation (local only)
 ARCHITECTURE.md
 CHANGELOG_TECHNICAL.md
+src/gui/ARCHITECTURE_DESIGN.md
 
 # Reference repositories (local only)
 nion-swift-reference/
