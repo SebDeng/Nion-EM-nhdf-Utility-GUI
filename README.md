@@ -110,6 +110,17 @@ file.nhdf
 
 ## Development
 
+### Local Documentation Files
+
+This project includes several local documentation files (not tracked in git) for development purposes:
+
+- **CLAUDE.md**: Context file for AI-assisted development sessions
+- **DEVELOPMENT_PLAN.md**: Detailed development roadmap and feature planning
+- **ARCHITECTURE.md**: Technical architecture, design patterns, and implementation details
+- **CHANGELOG_TECHNICAL.md**: Technical changelog tracking how features were implemented
+
+These files are created locally when you clone the repository and can be maintained for your development workflow.
+
 ### Project Structure
 
 ```

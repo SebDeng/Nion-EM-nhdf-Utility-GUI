@@ -83,6 +83,10 @@ CLAUDE.md
 # Development planning (local only)
 DEVELOPMENT_PLAN.md
 
+# Technical documentation (local only)
+ARCHITECTURE.md
+CHANGELOG_TECHNICAL.md
+
 # Reference repositories (local only)
 nion-swift-reference/
 
