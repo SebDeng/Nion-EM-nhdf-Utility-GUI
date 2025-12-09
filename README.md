@@ -24,6 +24,11 @@ Please send any bug or issue you noticed to sebastian.deng@yale.edu and I will t
 - **Free-Tiling Workspace** (Default): Nion Swift-style panel management with flexible splitting
 - **Drag & Drop Support**: Drag EM files from file browser or system directly to panels
 - **Multi-file Preview**: Open and compare multiple files simultaneously
+- **Processing Mode**: Real-time image processing with visual workflow tree
+  - Brightness, contrast, gamma adjustments (apply to ALL frames)
+  - Filter operations: Gaussian blur, Median filter, Unsharp mask
+  - Snapshot system for comparing different processing paths
+  - Visual node graph showing processing history/tree
 - **Data Visualization**: View 2D images, line profiles, histograms, and multi-dimensional data
 - **Metadata Browser**: Explore comprehensive metadata including calibrations, timestamps, and instrument parameters
 - **Export Options**: Export data to various formats (TIFF, PNG, JPG, MP4 video, CSV, JSON)
