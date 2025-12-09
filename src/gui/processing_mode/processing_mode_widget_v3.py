@@ -156,6 +156,10 @@ class ProcessingModeWidgetV3(QWidget):
         self.nhdf_data: Optional[NHDFData] = None
         self.current_frame: int = 0
 
+        # Original data display range (for consistent display when processing)
+        self._original_min: float = 0
+        self._original_max: float = 1
+
         # Snapshot panels
         self.snapshot_panels: List[SnapshotPanel] = []
 
@@ -396,11 +400,35 @@ class ProcessingModeWidgetV3(QWidget):
         # Load into engine
         self.engine.load_data(data.data)
 
+        # Store original data range for consistent display
+        self._original_min = float(np.min(data.data))
+        self._original_max = float(np.max(data.data))
+
+        # Set pixel scale for physical unit conversion in filters
+        # Get calibration from the data (typically X or Y dimension)
+        calibrations = data.dimensional_calibrations
+        if calibrations and len(calibrations) >= 2:
+            # Use X calibration (last dimension for images)
+            x_cal = calibrations[-1]
+            if x_cal and hasattr(x_cal, 'scale') and x_cal.scale > 0:
+                scale = x_cal.scale
+                unit = x_cal.units if hasattr(x_cal, 'units') and x_cal.units else 'nm'
+                # Convert common units to nm for consistency
+                if unit == 'µm' or unit == 'um':
+                    scale *= 1000
+                    unit = 'nm'
+                elif unit == 'm':
+                    scale *= 1e9
+                    unit = 'nm'
+                self.controls.set_pixel_scale(scale, unit)
+
         # Display in panels (transpose and flip x for correct orientation to match Preview mode)
         frame_data = data.data[0] if len(data.data.shape) == 3 else data.data
         display_data = np.fliplr(frame_data.T)  # Flip left-right only
-        self.original_panel.image_view.setImage(display_data)
-        self.preview_panel.image_view.setImage(display_data)
+
+        # Set images with fixed levels based on original data range
+        self.original_panel.image_view.setImage(display_data, levels=(self._original_min, self._original_max))
+        self.preview_panel.image_view.setImage(display_data, levels=(self._original_min, self._original_max))
 
         # Setup frame controls if multi-frame
         if len(data.data.shape) == 3:
@@ -459,10 +487,16 @@ class ProcessingModeWidgetV3(QWidget):
         """Handle processing completion."""
         if processed_data is not None:
             # Update preview panel (transpose and flip x for correct orientation)
+            # Use fixed levels from original data so brightness/contrast changes are visible
             if len(processed_data.shape) == 3:
-                self.preview_panel.image_view.setImage(np.fliplr(processed_data[self.current_frame].T))
+                display_data = np.fliplr(processed_data[self.current_frame].T)
             else:
-                self.preview_panel.image_view.setImage(np.fliplr(processed_data.T))
+                display_data = np.fliplr(processed_data.T)
+
+            self.preview_panel.image_view.setImage(
+                display_data,
+                levels=(self._original_min, self._original_max)
+            )
 
         self.status_label.setText("")
 
@@ -479,14 +513,21 @@ class ProcessingModeWidgetV3(QWidget):
         self.frame_spinbox.blockSignals(False)
 
         # Update displays (transpose and flip x for correct orientation)
+        # Use fixed levels from original data for consistent display
         if self.nhdf_data and len(self.nhdf_data.data.shape) == 3:
             # Original
-            self.original_panel.image_view.setImage(np.fliplr(self.nhdf_data.data[frame].T))
+            self.original_panel.image_view.setImage(
+                np.fliplr(self.nhdf_data.data[frame].T),
+                levels=(self._original_min, self._original_max)
+            )
 
             # Preview with processed frame
             processed_frame = self.engine.get_current_frame(frame)
             if processed_frame is not None:
-                self.preview_panel.image_view.setImage(np.fliplr(processed_frame.T))
+                self.preview_panel.image_view.setImage(
+                    np.fliplr(processed_frame.T),
+                    levels=(self._original_min, self._original_max)
+                )
 
     def _create_snapshot(self):
         """Create a snapshot."""
@@ -521,6 +562,8 @@ class ProcessingModeWidgetV3(QWidget):
     def _load_snapshot(self, snapshot_id: str):
         """Load a snapshot."""
         self.engine.load_snapshot(snapshot_id)
+        # Select the loaded snapshot in the graph so subsequent snapshots branch from it
+        self.node_graph.select_node(snapshot_id)
         self.status_label.setText(f"Loaded snapshot {snapshot_id}")
 
     def _compare_snapshot(self, snapshot_id: str):
@@ -567,9 +610,7 @@ class ProcessingModeWidgetV3(QWidget):
 
     def _reset_to_original(self):
         """Reset to original image and clear all processing."""
-        # Reset controls first (before engine triggers callback)
-        self.controls._reset_controls()
-
+        # Note: Controls are already reset if called from controls.reset_requested signal
         # Reset engine - this will trigger on_processing_complete which updates preview
         self.engine.reset_to_original()
 
@@ -607,15 +648,9 @@ class ProcessingModeWidgetV3(QWidget):
 
     def _add_snapshot_to_graph(self, snapshot: ProcessingState):
         """Add a snapshot to the node graph."""
-        # Determine parent from graph selection
-        selected = self.node_graph.get_selected_node()
-
-        # If 'root' is selected or nothing selected, parent should be None (will attach to root)
-        # If a snapshot is selected, branch from that snapshot
-        if selected and selected != 'root':
-            parent_id = selected
-        else:
-            parent_id = None  # Will attach to root node
+        # Use the parent_id from the snapshot itself (set by engine based on current_state_id)
+        # This ensures proper branching: if we're working from Snapshot 1, new snapshot branches from it
+        parent_id = snapshot.parent_id
 
         # Add to graph
         self.node_graph.add_node(
@@ -624,6 +659,9 @@ class ProcessingModeWidgetV3(QWidget):
             parent_id=parent_id,
             params=snapshot.parameters
         )
+
+        # Select the new snapshot so subsequent snapshots branch from it
+        self.node_graph.select_node(snapshot.id)
 
     def _remove_snapshot_from_graph(self, snapshot_id: str):
         """Remove a snapshot from the node graph."""

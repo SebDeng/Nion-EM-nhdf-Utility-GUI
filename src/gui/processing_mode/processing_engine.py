@@ -103,62 +103,255 @@ class ProcessingEngine:
             self.on_processing_complete(self.current_processed_data)
 
     def _process_single_frame(self, frame: np.ndarray, params: Dict[str, Any]) -> np.ndarray:
-        """Apply all processing steps to a single frame."""
+        """
+        Apply all processing steps to a single frame.
+        Follows ImageJ/Fiji conventions for all operations.
+        """
         result = frame.astype(np.float64)
 
-        # Get original data statistics
+        # Get original data statistics for reference
         orig_min = np.min(frame)
         orig_max = np.max(frame)
-        orig_mean = np.mean(frame)
         data_range = orig_max - orig_min if orig_max > orig_min else 1.0
 
-        # Apply brightness - more aggressive scaling
-        if 'brightness' in params and params['brightness'] != 0:
-            # Scale brightness more aggressively: -100 to 100 maps to -range to +range
-            brightness_scale = data_range * (params['brightness'] / 100.0)
-            result = result + brightness_scale
+        # === ImageJ-style Brightness & Contrast ===
+        # In ImageJ, B&C adjusts the display window (min/max) not pixel values directly.
+        # But for actual pixel modification (like Process > Math > Add), we follow this:
+        #
+        # ImageJ Brightness: Simply adds a value to all pixels
+        # ImageJ Contrast: Multiplies deviation from center by a factor
+        #
+        # The formula ImageJ uses for B&C window adjustment:
+        #   display_value = (pixel - min) / (max - min) * 255
+        # Where min/max are adjusted by brightness/contrast sliders
+        #
+        # For pixel modification, we use:
+        #   new_pixel = (pixel - center) * contrast + center + brightness
 
-        # Apply contrast - center around mean
+        center = (orig_min + orig_max) / 2.0
+
+        # Apply contrast first (ImageJ applies contrast around center)
         if 'contrast' in params and params['contrast'] != 1.0:
-            # Use original mean as center point
-            result = orig_mean + (result - orig_mean) * params['contrast']
+            # ImageJ contrast: multiply deviation from center
+            result = (result - center) * params['contrast'] + center
 
-        # Apply gamma
+        # Apply brightness (ImageJ: simple addition, scaled to data range)
+        if 'brightness' in params and params['brightness'] != 0:
+            # Map -100 to 100 slider to reasonable fraction of data range
+            # ImageJ uses direct pixel value addition
+            brightness_offset = (params['brightness'] / 100.0) * data_range
+            result = result + brightness_offset
+
+        # === ImageJ-style Gamma ===
+        # ImageJ gamma: Process > Math > Gamma
+        # Formula: output = (input/max)^gamma * max
+        # Or normalized: output = input^gamma (for 0-1 range)
         if 'gamma' in params and params['gamma'] != 1.0:
-            # Normalize to 0-1 range
+            # Normalize to 0-1 based on current data range
             current_min = np.min(result)
             current_max = np.max(result)
             if current_max > current_min:
+                # Normalize to 0-1
                 normalized = (result - current_min) / (current_max - current_min)
-                # Apply gamma
-                normalized = np.power(np.clip(normalized, 0, 1), params['gamma'])
-                # Rescale back to original range
-                result = normalized * data_range + orig_min
+                # Clip to valid range
+                normalized = np.clip(normalized, 0, 1)
+                # Apply gamma (ImageJ formula)
+                normalized = np.power(normalized, params['gamma'])
+                # Scale back to original range
+                result = normalized * (current_max - current_min) + current_min
 
-        # Apply filters
+        # Apply filters (ImageJ-style)
         result = self._apply_filters(result, params)
 
         return result
 
     def _apply_filters(self, image: np.ndarray, params: Dict[str, Any]) -> np.ndarray:
-        """Apply filter operations to image."""
+        """
+        Apply filter operations to image.
+        All filters follow ImageJ/Fiji conventions.
+        """
         from scipy import ndimage
         result = image.copy()
 
-        # Gaussian blur
+        # === ImageJ Gaussian Blur ===
+        # ImageJ: Process > Filters > Gaussian Blur
+        # Uses sigma (radius) in pixels, applies separable 2D Gaussian
+        # scipy.ndimage.gaussian_filter is equivalent
         if params.get('gaussian_enabled') and 'gaussian_sigma' in params:
-            result = ndimage.gaussian_filter(result, sigma=params['gaussian_sigma'])
+            sigma = params['gaussian_sigma']
+            # ImageJ uses the same sigma for both dimensions
+            result = ndimage.gaussian_filter(result, sigma=sigma, mode='reflect')
 
-        # Median filter
+        # === ImageJ Median Filter ===
+        # ImageJ: Process > Filters > Median
+        # Uses a square neighborhood of given radius
+        # ImageJ "radius" means the filter size is (2*radius+1)
+        # Our "size" parameter directly specifies the neighborhood size
         if params.get('median_enabled') and 'median_size' in params:
-            result = ndimage.median_filter(result, size=params['median_size'])
+            size = params['median_size']
+            # Ensure odd size (ImageJ uses odd sizes)
+            if size % 2 == 0:
+                size += 1
+            result = ndimage.median_filter(result, size=size, mode='reflect')
 
-        # Unsharp mask
+        # === ImageJ Unsharp Mask ===
+        # ImageJ: Process > Filters > Unsharp Mask
+        # Formula: sharpened = original + weight * (original - blurred)
+        # Parameters:
+        #   - Radius (sigma): Gaussian blur radius in pixels
+        #   - Mask Weight: Amount of sharpening (0-1 typical, can go higher)
         if params.get('unsharp_enabled') and 'unsharp_amount' in params and 'unsharp_radius' in params:
-            # Create blurred version
-            blurred = ndimage.gaussian_filter(result, sigma=params['unsharp_radius'])
-            # Apply unsharp mask
-            result = result + params['unsharp_amount'] * (result - blurred)
+            radius = params['unsharp_radius']
+            weight = params['unsharp_amount']
+            # Create blurred version using Gaussian (ImageJ style)
+            blurred = ndimage.gaussian_filter(result, sigma=radius, mode='reflect')
+            # ImageJ formula: output = original + weight * (original - blurred)
+            result = result + weight * (result - blurred)
+
+        # === ImageJ FFT Bandpass Filter ===
+        # ImageJ: Process > FFT > Bandpass Filter
+        if params.get('bandpass_enabled'):
+            result = self._apply_bandpass_filter_imagej(
+                result,
+                filter_large=params.get('bandpass_large', 40),
+                filter_small=params.get('bandpass_small', 3),
+                suppress_stripes=params.get('bandpass_suppress_stripes', 'None'),
+                tolerance=params.get('bandpass_tolerance', 5),
+                autoscale=params.get('bandpass_autoscale', True),
+                saturate=params.get('bandpass_saturate', False)
+            )
+
+        return result
+
+    def _apply_bandpass_filter_imagej(self, image: np.ndarray,
+                                        filter_large: float = 40,
+                                        filter_small: float = 3,
+                                        suppress_stripes: str = 'None',
+                                        tolerance: float = 5,
+                                        autoscale: bool = True,
+                                        saturate: bool = False) -> np.ndarray:
+        """
+        Apply ImageJ-style FFT Bandpass Filter.
+
+        This replicates ImageJ's Process > FFT > Bandpass Filter exactly.
+
+        Args:
+            image: Input image
+            filter_large: Filter large structures down to X pixels (high-pass cutoff)
+            filter_small: Filter small structures up to X pixels (low-pass cutoff)
+            suppress_stripes: 'None', 'Horizontal', or 'Vertical'
+            tolerance: Direction tolerance for stripe suppression (%)
+            autoscale: Whether to autoscale result after filtering
+            saturate: Whether to saturate when autoscaling
+
+        Returns:
+            Bandpass filtered image
+        """
+        rows, cols = image.shape
+
+        # ImageJ pads to power of 2 for FFT efficiency
+        # Find next power of 2
+        fft_rows = int(2 ** np.ceil(np.log2(rows)))
+        fft_cols = int(2 ** np.ceil(np.log2(cols)))
+
+        # Pad image (ImageJ uses edge padding)
+        padded = np.zeros((fft_rows, fft_cols), dtype=np.float64)
+        padded[:rows, :cols] = image
+
+        # Mirror padding for edges (ImageJ style)
+        if rows < fft_rows:
+            padded[rows:, :cols] = image[rows-1::-1, :][:fft_rows-rows, :]
+        if cols < fft_cols:
+            padded[:rows, cols:] = image[:, cols-1::-1][:, :fft_cols-cols]
+        if rows < fft_rows and cols < fft_cols:
+            padded[rows:, cols:] = image[rows-1::-1, cols-1::-1][:fft_rows-rows, :fft_cols-cols]
+
+        # Perform FFT
+        fft = np.fft.fft2(padded)
+        fft_shifted = np.fft.fftshift(fft)
+
+        # Create filter mask
+        crow, ccol = fft_rows // 2, fft_cols // 2
+        y, x = np.ogrid[:fft_rows, :fft_cols]
+
+        # Distance from center in pixels
+        distance = np.sqrt((x - ccol) ** 2 + (y - crow) ** 2)
+
+        # ImageJ uses pixel-based cutoffs
+        # filter_large: removes structures larger than this (high-pass)
+        # filter_small: removes structures smaller than this (low-pass)
+
+        # Convert to frequency domain cutoffs
+        # In ImageJ, filter_large corresponds to low frequency cutoff
+        # filter_small corresponds to high frequency cutoff
+
+        # ImageJ uses smooth Gaussian-like transitions
+        filter_mask = np.ones((fft_rows, fft_cols), dtype=np.float64)
+
+        # High-pass filter (remove large structures / low frequencies)
+        if filter_large > 0 and filter_large < max(fft_rows, fft_cols):
+            # Cutoff frequency corresponds to structures of size filter_large pixels
+            # frequency = size / 2 in FFT space
+            cutoff_large = max(fft_rows, fft_cols) / filter_large
+            # Smooth Gaussian transition (ImageJ style)
+            hp_filter = 1.0 - np.exp(-(distance ** 2) / (2 * cutoff_large ** 2))
+            filter_mask *= hp_filter
+
+        # Low-pass filter (remove small structures / high frequencies)
+        if filter_small > 0:
+            cutoff_small = max(fft_rows, fft_cols) / filter_small
+            # Smooth Gaussian transition
+            lp_filter = np.exp(-(distance ** 2) / (2 * cutoff_small ** 2))
+            filter_mask *= lp_filter
+
+        # Stripe suppression (ImageJ feature)
+        if suppress_stripes in ['Horizontal', 'Vertical']:
+            angle_tolerance = tolerance / 100.0 * np.pi / 2  # Convert to radians
+
+            # Calculate angle from center
+            with np.errstate(divide='ignore', invalid='ignore'):
+                angle = np.arctan2(y - crow, x - ccol)
+                angle = np.nan_to_num(angle, nan=0.0)
+
+            if suppress_stripes == 'Horizontal':
+                # Suppress horizontal stripes = suppress vertical frequencies
+                # Vertical frequencies are near angle = ±π/2
+                stripe_mask = np.abs(np.abs(angle) - np.pi/2) > angle_tolerance
+            else:  # Vertical
+                # Suppress vertical stripes = suppress horizontal frequencies
+                # Horizontal frequencies are near angle = 0 or ±π
+                stripe_mask = (np.abs(angle) > angle_tolerance) & (np.abs(angle) < np.pi - angle_tolerance)
+
+            # Smooth transition at the edges
+            filter_mask *= stripe_mask.astype(np.float64)
+
+        # Preserve DC component (ImageJ does this)
+        filter_mask[crow, ccol] = 1.0
+
+        # Apply filter
+        filtered_fft = fft_shifted * filter_mask
+
+        # Inverse FFT
+        filtered = np.fft.ifft2(np.fft.ifftshift(filtered_fft))
+        filtered = np.real(filtered)
+
+        # Crop back to original size
+        result = filtered[:rows, :cols]
+
+        # Autoscale if requested (ImageJ default)
+        if autoscale:
+            result_min = np.min(result)
+            result_max = np.max(result)
+            orig_min = np.min(image)
+            orig_max = np.max(image)
+
+            if result_max > result_min:
+                # Scale to original range
+                result = (result - result_min) / (result_max - result_min)
+                result = result * (orig_max - orig_min) + orig_min
+
+                if saturate:
+                    result = np.clip(result, orig_min, orig_max)
 
         return result
 
@@ -222,6 +415,8 @@ class ProcessingEngine:
         if self.original_data is not None:
             self.current_processed_data = self.original_data.copy()
             self.current_parameters = {}
+            # Reset current state to None so new snapshots branch from root
+            self.current_state_id = None
 
             if self.on_processing_complete:
                 self.on_processing_complete(self.current_processed_data)

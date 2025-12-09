@@ -150,6 +150,7 @@ class HistogramWidget(QWidget):
         # Plot histogram using step mode
         # Use bin edges for x-axis (stepMode needs n+1 x values for n y values)
         self._histogram_item.setData(bin_edges, counts, stepMode='center')
+        self._histogram_item.setVisible(True)
 
         # Update y-axis label
         if self._log_scale:
@@ -194,7 +195,9 @@ class HistogramWidget(QWidget):
 
     def clear_histogram(self):
         """Clear the histogram display."""
-        self._histogram_item.setData([], [])
+        # For stepMode=True, X must be len(Y)+1, so use [0,1] and [0] to clear
+        self._histogram_item.setData([0, 1], [0])
+        self._histogram_item.setVisible(False)
         self._info_label.setText("")
         self._current_data = None
         self._min_line.setVisible(False)

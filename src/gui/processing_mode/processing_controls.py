@@ -6,7 +6,8 @@ Provides sliders and controls for adjustments and filters.
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
     QLabel, QSlider, QPushButton, QSpinBox, QDoubleSpinBox,
-    QCheckBox, QTabWidget, QScrollArea, QFrame, QGridLayout
+    QCheckBox, QTabWidget, QScrollArea, QFrame, QGridLayout,
+    QComboBox
 )
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QFont
@@ -176,58 +177,83 @@ class ProcessingControlsPanel(QWidget):
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(5)
 
+        # Store pixel scale for unit conversion (will be set when data is loaded)
+        self._pixel_scale_nm = None  # nm per pixel
+
         # Gaussian Blur
         gaussian_group = QGroupBox("Gaussian Blur")
         gaussian_layout = QGridLayout(gaussian_group)
-        gaussian_layout.setColumnStretch(2, 1)  # Make third column stretch
+        gaussian_layout.setColumnStretch(3, 1)  # Make fourth column stretch
 
         self.gaussian_check = QCheckBox("Enable")
-        gaussian_layout.addWidget(self.gaussian_check, 0, 0)
+        gaussian_layout.addWidget(self.gaussian_check, 0, 0, 1, 4)
 
-        gaussian_layout.addWidget(QLabel("Sigma:"), 0, 1)
+        # Sigma in pixels
+        gaussian_layout.addWidget(QLabel("Sigma:"), 1, 0)
 
         self.gaussian_sigma = QDoubleSpinBox()
-        self.gaussian_sigma.setRange(0.1, 10.0)
+        self.gaussian_sigma.setRange(0.1, 50.0)
         self.gaussian_sigma.setValue(1.0)
         self.gaussian_sigma.setSingleStep(0.5)
+        self.gaussian_sigma.setDecimals(2)
         self.gaussian_sigma.setEnabled(False)
-        self.gaussian_sigma.setMinimumWidth(80)
+        self.gaussian_sigma.setSuffix(" px")
+        self.gaussian_sigma.setMinimumWidth(90)
+        self.gaussian_sigma.setToolTip("Gaussian kernel standard deviation in pixels")
+        gaussian_layout.addWidget(self.gaussian_sigma, 1, 1)
 
-        gaussian_layout.addWidget(self.gaussian_sigma, 0, 2)
+        # Physical unit display (nm)
+        self.gaussian_nm_label = QLabel("= ? nm")
+        self.gaussian_nm_label.setStyleSheet("QLabel { color: #888; }")
+        self.gaussian_nm_label.setToolTip("Equivalent size in physical units (based on image calibration)")
+        gaussian_layout.addWidget(self.gaussian_nm_label, 1, 2, 1, 2)
+
+        # Connect sigma change to update nm label
+        self.gaussian_sigma.valueChanged.connect(self._update_gaussian_nm_label)
 
         layout.addWidget(gaussian_group)
 
         # Median Filter
         median_group = QGroupBox("Median Filter")
         median_layout = QGridLayout(median_group)
-        median_layout.setColumnStretch(2, 1)
+        median_layout.setColumnStretch(3, 1)
 
         self.median_check = QCheckBox("Enable")
-        median_layout.addWidget(self.median_check, 0, 0)
+        median_layout.addWidget(self.median_check, 0, 0, 1, 4)
 
-        median_layout.addWidget(QLabel("Size:"), 0, 1)
+        median_layout.addWidget(QLabel("Size:"), 1, 0)
 
         self.median_size = QSpinBox()
-        self.median_size.setRange(3, 21)
+        self.median_size.setRange(3, 51)
         self.median_size.setValue(3)
         self.median_size.setSingleStep(2)  # Keep odd numbers
         self.median_size.setEnabled(False)
+        self.median_size.setSuffix(" px")
         self.median_size.setMinimumWidth(80)
+        self.median_size.setToolTip("Median filter kernel size in pixels (odd numbers)")
+        median_layout.addWidget(self.median_size, 1, 1)
 
-        median_layout.addWidget(self.median_size, 0, 2)
+        # Physical unit display for median
+        self.median_nm_label = QLabel("= ? nm")
+        self.median_nm_label.setStyleSheet("QLabel { color: #888; }")
+        self.median_nm_label.setToolTip("Equivalent size in physical units")
+        median_layout.addWidget(self.median_nm_label, 1, 2, 1, 2)
+
+        # Connect size change to update nm label
+        self.median_size.valueChanged.connect(self._update_median_nm_label)
 
         layout.addWidget(median_group)
 
         # Unsharp Mask
         unsharp_group = QGroupBox("Unsharp Mask")
         unsharp_layout = QGridLayout(unsharp_group)
-        unsharp_layout.setColumnStretch(2, 1)
+        unsharp_layout.setColumnStretch(3, 1)
 
         # Enable checkbox
         self.unsharp_check = QCheckBox("Enable")
-        unsharp_layout.addWidget(self.unsharp_check, 0, 0, 1, 3)
+        unsharp_layout.addWidget(self.unsharp_check, 0, 0, 1, 4)
 
-        # Amount control
+        # Amount control (mask weight)
         unsharp_layout.addWidget(QLabel("Amount:"), 1, 0)
 
         self.unsharp_amount = QDoubleSpinBox()
@@ -236,20 +262,31 @@ class ProcessingControlsPanel(QWidget):
         self.unsharp_amount.setSingleStep(0.1)
         self.unsharp_amount.setEnabled(False)
         self.unsharp_amount.setMinimumWidth(80)
+        self.unsharp_amount.setToolTip("Sharpening strength (mask weight)")
+        unsharp_layout.addWidget(self.unsharp_amount, 1, 1, 1, 3)
 
-        unsharp_layout.addWidget(self.unsharp_amount, 1, 1, 1, 2)
-
-        # Radius control
+        # Radius control (sigma)
         unsharp_layout.addWidget(QLabel("Radius:"), 2, 0)
 
         self.unsharp_radius = QDoubleSpinBox()
-        self.unsharp_radius.setRange(0.1, 10.0)
+        self.unsharp_radius.setRange(0.1, 20.0)
         self.unsharp_radius.setValue(1.0)
         self.unsharp_radius.setSingleStep(0.5)
+        self.unsharp_radius.setDecimals(2)
         self.unsharp_radius.setEnabled(False)
-        self.unsharp_radius.setMinimumWidth(80)
+        self.unsharp_radius.setSuffix(" px")
+        self.unsharp_radius.setMinimumWidth(90)
+        self.unsharp_radius.setToolTip("Gaussian blur radius (sigma) in pixels")
+        unsharp_layout.addWidget(self.unsharp_radius, 2, 1)
 
-        unsharp_layout.addWidget(self.unsharp_radius, 2, 1, 1, 2)
+        # Physical unit display for unsharp radius
+        self.unsharp_nm_label = QLabel("= ? nm")
+        self.unsharp_nm_label.setStyleSheet("QLabel { color: #888; }")
+        self.unsharp_nm_label.setToolTip("Equivalent size in physical units")
+        unsharp_layout.addWidget(self.unsharp_nm_label, 2, 2, 1, 2)
+
+        # Connect radius change to update nm label
+        self.unsharp_radius.valueChanged.connect(self._update_unsharp_nm_label)
 
         layout.addWidget(unsharp_group)
 
@@ -264,18 +301,127 @@ class ProcessingControlsPanel(QWidget):
         return widget
 
     def _create_advanced_tab(self) -> QWidget:
-        """Create the advanced processing tab (placeholder)."""
+        """Create the advanced processing tab with ImageJ-style bandpass filter."""
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(5)
 
-        placeholder = QLabel("Advanced processing options\ncoming soon...")
-        placeholder.setAlignment(Qt.AlignCenter)
-        placeholder.setStyleSheet("QLabel { color: #888; }")
+        # Bandpass Filter (ImageJ-style)
+        bandpass_group = QGroupBox("FFT Bandpass Filter (ImageJ-style)")
+        bandpass_layout = QGridLayout(bandpass_group)
+        bandpass_layout.setColumnStretch(2, 1)
 
-        layout.addWidget(placeholder)
+        # Enable checkbox
+        self.bandpass_check = QCheckBox("Enable")
+        self.bandpass_check.setToolTip("Apply ImageJ-style FFT bandpass filtering")
+        bandpass_layout.addWidget(self.bandpass_check, 0, 0, 1, 3)
+
+        # Filter large structures (high-pass cutoff)
+        bandpass_layout.addWidget(QLabel("Filter large:"), 1, 0)
+        self.bandpass_large = QSpinBox()
+        self.bandpass_large.setRange(0, 1000)
+        self.bandpass_large.setValue(40)
+        self.bandpass_large.setEnabled(False)
+        self.bandpass_large.setToolTip("Filter large structures down to X pixels (0 = off)")
+        self.bandpass_large.setSuffix(" px")
+        self.bandpass_large.setMinimumWidth(80)
+        bandpass_layout.addWidget(self.bandpass_large, 1, 1, 1, 2)
+
+        # Filter small structures (low-pass cutoff)
+        bandpass_layout.addWidget(QLabel("Filter small:"), 2, 0)
+        self.bandpass_small = QSpinBox()
+        self.bandpass_small.setRange(0, 100)
+        self.bandpass_small.setValue(3)
+        self.bandpass_small.setEnabled(False)
+        self.bandpass_small.setToolTip("Filter small structures up to X pixels (0 = off)")
+        self.bandpass_small.setSuffix(" px")
+        self.bandpass_small.setMinimumWidth(80)
+        bandpass_layout.addWidget(self.bandpass_small, 2, 1, 1, 2)
+
+        # Suppress stripes
+        bandpass_layout.addWidget(QLabel("Suppress stripes:"), 3, 0)
+        self.bandpass_stripes = QComboBox()
+        self.bandpass_stripes.addItems(["None", "Horizontal", "Vertical"])
+        self.bandpass_stripes.setEnabled(False)
+        self.bandpass_stripes.setToolTip("Suppress horizontal or vertical stripes")
+        self.bandpass_stripes.setMinimumWidth(80)
+        bandpass_layout.addWidget(self.bandpass_stripes, 3, 1, 1, 2)
+
+        # Tolerance for stripe suppression
+        bandpass_layout.addWidget(QLabel("Tolerance:"), 4, 0)
+        self.bandpass_tolerance = QSpinBox()
+        self.bandpass_tolerance.setRange(1, 20)
+        self.bandpass_tolerance.setValue(5)
+        self.bandpass_tolerance.setEnabled(False)
+        self.bandpass_tolerance.setToolTip("Direction tolerance for stripe suppression (%)")
+        self.bandpass_tolerance.setSuffix(" %")
+        self.bandpass_tolerance.setMinimumWidth(80)
+        bandpass_layout.addWidget(self.bandpass_tolerance, 4, 1, 1, 2)
+
+        # Autoscale checkbox
+        self.bandpass_autoscale = QCheckBox("Autoscale after filtering")
+        self.bandpass_autoscale.setChecked(True)
+        self.bandpass_autoscale.setEnabled(False)
+        self.bandpass_autoscale.setToolTip("Automatically scale output to original range")
+        bandpass_layout.addWidget(self.bandpass_autoscale, 5, 0, 1, 3)
+
+        # Saturate checkbox
+        self.bandpass_saturate = QCheckBox("Saturate when autoscaling")
+        self.bandpass_saturate.setChecked(False)
+        self.bandpass_saturate.setEnabled(False)
+        self.bandpass_saturate.setToolTip("Clip values to original min/max range")
+        bandpass_layout.addWidget(self.bandpass_saturate, 6, 0, 1, 3)
+
+        layout.addWidget(bandpass_group)
+
+        # Connect signals
+        self.bandpass_check.toggled.connect(self._on_bandpass_toggled)
+        self.bandpass_check.toggled.connect(self._update_advanced_button)
+
+        # Live update for bandpass when values change
+        self.bandpass_large.valueChanged.connect(self._on_advanced_changed)
+        self.bandpass_small.valueChanged.connect(self._on_advanced_changed)
+        self.bandpass_stripes.currentIndexChanged.connect(self._on_advanced_changed)
+        self.bandpass_tolerance.valueChanged.connect(self._on_advanced_changed)
+        self.bandpass_autoscale.toggled.connect(self._on_advanced_changed)
+        self.bandpass_saturate.toggled.connect(self._on_advanced_changed)
+
+        # Apply advanced button
+        self.apply_advanced_btn = QPushButton("Apply Advanced Filters")
+        self.apply_advanced_btn.setMinimumWidth(100)
+        self.apply_advanced_btn.setEnabled(False)
+        self.apply_advanced_btn.clicked.connect(self._apply_advanced)
+        layout.addWidget(self.apply_advanced_btn)
+
+        layout.addStretch()
 
         return widget
+
+    def _on_bandpass_toggled(self, enabled: bool):
+        """Handle bandpass filter enable/disable."""
+        self.bandpass_large.setEnabled(enabled)
+        self.bandpass_small.setEnabled(enabled)
+        self.bandpass_stripes.setEnabled(enabled)
+        self.bandpass_tolerance.setEnabled(enabled)
+        self.bandpass_autoscale.setEnabled(enabled)
+        self.bandpass_saturate.setEnabled(enabled)
+
+    def _update_advanced_button(self):
+        """Update the state of the apply advanced button."""
+        any_advanced_enabled = self.bandpass_check.isChecked()
+        self.apply_advanced_btn.setEnabled(any_advanced_enabled)
+
+    def _on_advanced_changed(self):
+        """Handle advanced filter changes with debouncing."""
+        if self.bandpass_check.isChecked():
+            self.update_timer.stop()
+            self.update_timer.start(100)
+
+    def _apply_advanced(self):
+        """Apply advanced filters."""
+        # Emit combined parameters with adjustment_changed to trigger processing
+        self.adjustment_changed.emit(self.get_current_parameters())
 
     def _connect_signals(self):
         """Connect internal signals."""
@@ -397,8 +543,113 @@ class ProcessingControlsPanel(QWidget):
         self.median_check.setChecked(False)
         self.unsharp_check.setChecked(False)
 
+        # Reset advanced filters (ImageJ-style bandpass)
+        if hasattr(self, 'bandpass_check'):
+            self.bandpass_check.setChecked(False)
+            self.bandpass_large.setValue(40)
+            self.bandpass_small.setValue(3)
+            self.bandpass_stripes.setCurrentIndex(0)  # None
+            self.bandpass_tolerance.setValue(5)
+            self.bandpass_autoscale.setChecked(True)
+            self.bandpass_saturate.setChecked(False)
+
+        # Emit reset signal to trigger processing reset
+        self.reset_requested.emit()
+
     def get_current_parameters(self) -> Dict[str, Any]:
-        """Get all current processing parameters."""
-        params = self.current_adjustments.copy()
-        params.update(self.current_filters)
+        """Get all current processing parameters directly from controls."""
+        # Read directly from controls instead of cached dict to ensure up-to-date values
+        params = {
+            'brightness': self.brightness_value.value(),
+            'contrast': self.contrast_value.value(),
+            'gamma': self.gamma_value.value()
+        }
+
+        # Add filter parameters if enabled
+        if self.gaussian_check.isChecked():
+            params['gaussian_enabled'] = True
+            params['gaussian_sigma'] = self.gaussian_sigma.value()
+
+        if self.median_check.isChecked():
+            params['median_enabled'] = True
+            params['median_size'] = self.median_size.value()
+
+        if self.unsharp_check.isChecked():
+            params['unsharp_enabled'] = True
+            params['unsharp_amount'] = self.unsharp_amount.value()
+            params['unsharp_radius'] = self.unsharp_radius.value()
+
+        # Add advanced filter parameters if enabled (ImageJ-style bandpass)
+        if hasattr(self, 'bandpass_check') and self.bandpass_check.isChecked():
+            params['bandpass_enabled'] = True
+            params['bandpass_large'] = self.bandpass_large.value()
+            params['bandpass_small'] = self.bandpass_small.value()
+            params['bandpass_suppress_stripes'] = self.bandpass_stripes.currentText()
+            params['bandpass_tolerance'] = self.bandpass_tolerance.value()
+            params['bandpass_autoscale'] = self.bandpass_autoscale.isChecked()
+            params['bandpass_saturate'] = self.bandpass_saturate.isChecked()
+
         return params
+
+    def set_pixel_scale(self, scale_nm: float, unit: str = "nm"):
+        """
+        Set the pixel scale for physical unit conversion.
+
+        Args:
+            scale_nm: Scale in nm per pixel (or other unit per pixel)
+            unit: Unit string (default "nm")
+        """
+        self._pixel_scale_nm = scale_nm
+        self._pixel_unit = unit
+
+        # Update all nm labels
+        self._update_gaussian_nm_label()
+        self._update_median_nm_label()
+        self._update_unsharp_nm_label()
+        self._update_bandpass_nm_labels()
+
+    def _format_physical_value(self, pixels: float) -> str:
+        """Format a pixel value as physical units."""
+        if self._pixel_scale_nm is None:
+            return "= ? nm"
+
+        physical = pixels * self._pixel_scale_nm
+        unit = getattr(self, '_pixel_unit', 'nm')
+
+        # Use appropriate precision based on magnitude
+        if physical >= 100:
+            return f"= {physical:.1f} {unit}"
+        elif physical >= 10:
+            return f"= {physical:.2f} {unit}"
+        elif physical >= 1:
+            return f"= {physical:.3f} {unit}"
+        else:
+            return f"= {physical:.4f} {unit}"
+
+    def _update_gaussian_nm_label(self):
+        """Update the Gaussian sigma nm label."""
+        if hasattr(self, 'gaussian_nm_label'):
+            self.gaussian_nm_label.setText(
+                self._format_physical_value(self.gaussian_sigma.value())
+            )
+
+    def _update_median_nm_label(self):
+        """Update the Median size nm label."""
+        if hasattr(self, 'median_nm_label'):
+            self.median_nm_label.setText(
+                self._format_physical_value(self.median_size.value())
+            )
+
+    def _update_unsharp_nm_label(self):
+        """Update the Unsharp radius nm label."""
+        if hasattr(self, 'unsharp_nm_label'):
+            self.unsharp_nm_label.setText(
+                self._format_physical_value(self.unsharp_radius.value())
+            )
+
+    def _update_bandpass_nm_labels(self):
+        """Update bandpass filter nm labels (for filter_large and filter_small)."""
+        # Bandpass uses pixel sizes, so we can show physical equivalents
+        if hasattr(self, 'bandpass_large'):
+            # These are already in pixels, convert to physical units
+            pass  # Bandpass filter sizes are structure sizes, not kernel sizes
