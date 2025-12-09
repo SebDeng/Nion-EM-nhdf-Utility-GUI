@@ -56,14 +56,14 @@ def compute_param_diff(parent_params: Dict, child_params: Dict) -> Dict:
 
 
 def get_edge_label(parent_params: Dict, child_params: Dict) -> str:
-    """Generate a short label for the edge showing what changed."""
+    """Generate a very short label for the edge showing what changed."""
     diff = compute_param_diff(parent_params, child_params)
     if not diff:
         return ""
 
     parts = []
 
-    # Basic adjustments
+    # Basic adjustments - ultra compact
     if 'brightness' in diff:
         val = diff['brightness']['to']
         if val != 0:
@@ -72,24 +72,27 @@ def get_edge_label(parent_params: Dict, child_params: Dict) -> str:
     if 'contrast' in diff:
         val = diff['contrast']['to']
         if val != 1.0:
-            parts.append(f"C{val:.1f}")
+            parts.append(f"C×{val:.1f}")
 
     if 'gamma' in diff:
         val = diff['gamma']['to']
         if val != 1.0:
             parts.append(f"γ{val:.1f}")
 
-    # Filters (abbreviated)
+    # Filters - single letter only
     if diff.get('gaussian_enabled', {}).get('to', False):
-        parts.append("Gauss")
+        parts.append("G")
     if diff.get('median_enabled', {}).get('to', False):
-        parts.append("Med")
+        parts.append("M")
     if diff.get('unsharp_enabled', {}).get('to', False):
-        parts.append("Sharp")
+        parts.append("U")
     if diff.get('bandpass_enabled', {}).get('to', False):
         parts.append("BP")
 
-    return ", ".join(parts) if parts else ""
+    # Limit to max 3 items to keep compact
+    if len(parts) > 3:
+        return " ".join(parts[:3]) + "…"
+    return " ".join(parts) if parts else ""
 
 
 def format_diff_for_details(parent_params: Dict, child_params: Dict, parent_name: str) -> str:

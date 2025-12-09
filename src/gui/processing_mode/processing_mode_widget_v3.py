@@ -32,7 +32,7 @@ class SnapshotPanel(QFrame):
         self.current_frame = 0
 
         self.setFrameStyle(QFrame.Box)
-        self.setMinimumSize(250, 250)
+        self.setMinimumSize(150, 150)  # Reduced to allow more flexibility
 
         self._setup_ui()
 
@@ -195,12 +195,16 @@ class ProcessingModeWidgetV3(QWidget):
 
         # Main horizontal splitter
         self.main_splitter = QSplitter(Qt.Horizontal)
+        self.main_splitter.setChildrenCollapsible(False)
+        self.main_splitter.setHandleWidth(6)  # Wider handle for easier grabbing
 
         # Left: Vertical splitter for image panels and snapshots
         self.left_splitter = QSplitter(Qt.Vertical)
+        self.left_splitter.setChildrenCollapsible(False)
 
         # Top row: Original and Preview (horizontal splitter)
         top_splitter = QSplitter(Qt.Horizontal)
+        top_splitter.setChildrenCollapsible(False)
 
         # Original panel
         self.original_panel = self._create_display_panel("Original (Reference)")
@@ -238,16 +242,17 @@ class ProcessingModeWidgetV3(QWidget):
 
         snapshots_layout.addWidget(snapshots_header)
 
-        # Snapshots scroll area with horizontal layout
+        # Snapshots in a horizontal splitter for resizable panels
         self.snapshots_scroll = QScrollArea()
         self.snapshots_scroll.setWidgetResizable(True)
         self.snapshots_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.snapshots_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
-        self.snapshots_widget = QWidget()
-        self.snapshots_grid = QGridLayout(self.snapshots_widget)
-        self.snapshots_grid.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-        self.snapshots_scroll.setWidget(self.snapshots_widget)
+        # Use a horizontal splitter instead of grid for resizable snapshots
+        self.snapshots_splitter = QSplitter(Qt.Horizontal)
+        self.snapshots_splitter.setChildrenCollapsible(False)
+        self.snapshots_splitter.setHandleWidth(4)
+        self.snapshots_scroll.setWidget(self.snapshots_splitter)
 
         snapshots_layout.addWidget(self.snapshots_scroll)
 
@@ -260,8 +265,7 @@ class ProcessingModeWidgetV3(QWidget):
 
         # Right: Controls and Tree in vertical splitter
         right_splitter = QSplitter(Qt.Vertical)
-        right_splitter.setMaximumWidth(350)
-        right_splitter.setMinimumWidth(250)
+        right_splitter.setMinimumWidth(200)  # Reduced minimum to allow more flexibility
 
         # Controls panel
         self.controls = ProcessingControlsPanel()
@@ -552,10 +556,8 @@ class ProcessingModeWidgetV3(QWidget):
         panel.compare_requested.connect(self._compare_snapshot)
         panel.delete_requested.connect(self._delete_snapshot)
 
-        # Add to grid (max 4 columns)
-        row = len(self.snapshot_panels) // 4
-        col = len(self.snapshot_panels) % 4
-        self.snapshots_grid.addWidget(panel, row, col)
+        # Add to horizontal splitter
+        self.snapshots_splitter.addWidget(panel)
 
         self.snapshot_panels.append(panel)
 
@@ -583,20 +585,7 @@ class ProcessingModeWidgetV3(QWidget):
         # Remove from node graph
         self._remove_snapshot_from_graph(snapshot_id)
 
-        # Re-arrange grid
-        self._rearrange_snapshots()
-
-    def _rearrange_snapshots(self):
-        """Re-arrange snapshot panels in grid."""
-        # Clear grid
-        while self.snapshots_grid.count():
-            self.snapshots_grid.takeAt(0)
-
-        # Re-add panels
-        for i, panel in enumerate(self.snapshot_panels):
-            row = i // 4
-            col = i % 4
-            self.snapshots_grid.addWidget(panel, row, col)
+        # No need to rearrange with splitter - deletion handles it automatically
 
     def _clear_snapshots(self):
         """Clear all snapshots."""
@@ -604,9 +593,6 @@ class ProcessingModeWidgetV3(QWidget):
             panel.deleteLater()
 
         self.snapshot_panels.clear()
-
-        while self.snapshots_grid.count():
-            self.snapshots_grid.takeAt(0)
 
     def _reset_to_original(self):
         """Reset to original image and clear all processing."""
