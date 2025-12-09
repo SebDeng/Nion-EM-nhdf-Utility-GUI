@@ -58,18 +58,15 @@ class ModeManager(QObject):
         if self._processing_widget is not None:
             return
 
-        # Create a placeholder with label for now
-        from PySide6.QtWidgets import QLabel, QVBoxLayout
+        # Import and create the new ProcessingModeWidgetV3
+        from src.gui.processing_mode.processing_mode_widget_v3 import ProcessingModeWidgetV3
 
-        placeholder = QWidget()
-        layout = QVBoxLayout(placeholder)
-        label = QLabel("Processing Mode\n(To be implemented)")
-        label.setAlignment(Qt.AlignCenter)
-        label.setStyleSheet("QLabel { font-size: 18px; color: #888; }")
-        layout.addWidget(label)
-
-        self._processing_widget = placeholder
+        self._processing_widget = ProcessingModeWidgetV3()
         self.tab_widget.addTab(self._processing_widget, "Processing")
+
+        # Connect processing widget signals
+        if hasattr(self._processing_widget, 'file_loaded'):
+            self._processing_widget.file_loaded.connect(self._on_processing_file_loaded)
 
     def _on_tab_changed(self, index: int):
         """Handle tab change."""
@@ -80,12 +77,16 @@ class ModeManager(QObject):
             self.current_mode = "processing"
             self.mode_changed.emit("processing")
 
-            # If we have a file loaded, send it to processing mode
-            if self.current_file and self.current_data:
-                self.processing_requested.emit(self.current_file, self.current_data)
+            # Don't auto-load - wait for explicit request
 
     def _on_preview_file_loaded(self, file_path: str, data: 'NHDFData'):
         """Handle file loaded in preview mode."""
+        self.current_file = file_path
+        self.current_data = data
+        self.file_loaded.emit(file_path, data)
+
+    def _on_processing_file_loaded(self, file_path: str, data: 'NHDFData'):
+        """Handle file loaded in processing mode."""
         self.current_file = file_path
         self.current_data = data
         self.file_loaded.emit(file_path, data)

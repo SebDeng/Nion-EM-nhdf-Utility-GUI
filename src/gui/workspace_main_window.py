@@ -85,6 +85,7 @@ class WorkspaceMainWindow(QMainWindow):
         # Create mode manager with tabbed workspace/processing
         self._mode_manager = ModeManager(self)
         self._mode_manager.mode_changed.connect(self._on_mode_changed)
+        self._mode_manager.processing_requested.connect(self._on_processing_requested)
         central_layout.addWidget(self._mode_manager.get_widget(), 1)  # Give tabs the stretch factor
 
         # Keep reference to workspace for compatibility
@@ -237,6 +238,16 @@ class WorkspaceMainWindow(QMainWindow):
         reset_all_action = QAction("Reset &All Views", self)
         reset_all_action.triggered.connect(self._reset_all_views)
         view_menu.addAction(reset_all_action)
+
+        # Process menu
+        process_menu = menubar.addMenu("&Process")
+
+        send_to_processing_action = QAction("&Send to Processing Mode", self)
+        send_to_processing_action.setShortcut(QKeySequence("Ctrl+P"))
+        send_to_processing_action.triggered.connect(self._send_to_processing_mode)
+        send_to_processing_action.setEnabled(False)
+        self._send_to_processing_action = send_to_processing_action
+        process_menu.addAction(send_to_processing_action)
 
         # Export menu
         export_menu = menubar.addMenu("&Export")
@@ -827,6 +838,24 @@ class WorkspaceMainWindow(QMainWindow):
             self._analysis_toolbar.setVisible(False)
             self._analysis_dock.setVisible(False)
 
+    def _on_processing_requested(self, file_path: str, data):
+        """Handle request to load file in processing mode."""
+        # Load the file into processing mode
+        processing_widget = self._mode_manager.get_processing_widget()
+        if processing_widget and hasattr(processing_widget, 'load_file'):
+            processing_widget.load_file(file_path, data)
+
+    def _send_to_processing_mode(self):
+        """Send current panel's file to Processing Mode."""
+        if not isinstance(self._workspace.selected_panel, WorkspaceDisplayPanel):
+            return
+
+        panel = self._workspace.selected_panel
+        if panel.current_data and panel.current_file:
+            # Switch to processing mode and load the file
+            self._mode_manager.switch_to_processing(panel.current_file, panel.current_data)
+            self._statusbar.showMessage("Sent to Processing Mode")
+
     def _on_create_line_profile(self):
         """Handle create line profile button click."""
         # Show analysis dock and switch to line profile tab
@@ -1291,6 +1320,10 @@ class WorkspaceMainWindow(QMainWindow):
             has_data = self._workspace.selected_panel.current_data is not None
 
         self._export_action.setEnabled(has_data)
+
+        # Enable "Send to Processing" if current panel has data
+        if hasattr(self, '_send_to_processing_action'):
+            self._send_to_processing_action.setEnabled(has_data)
 
         # Check if any panel has data
         any_has_data = any(
