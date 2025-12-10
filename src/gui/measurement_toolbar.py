@@ -87,6 +87,65 @@ def create_polygon_icon(size: int = 24, color: QColor = None) -> QIcon:
     return QIcon(pixmap)
 
 
+def create_memo_icon(size: int = 24, color: QColor = None) -> QIcon:
+    """Create a sticky note / memo pad icon."""
+    if color is None:
+        color = QColor(200, 200, 200)
+
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+
+    margin = 3
+    note_width = size - 2 * margin
+    note_height = size - 2 * margin
+    fold_size = 5
+
+    # Draw the sticky note shape (rectangle with folded corner)
+    pen = QPen(color)
+    pen.setWidth(2)
+    painter.setPen(pen)
+
+    # Main rectangle (without top-right corner)
+    from PySide6.QtGui import QPolygonF
+    from PySide6.QtCore import QPointF
+    points = [
+        QPointF(margin, margin),  # Top-left
+        QPointF(margin + note_width - fold_size, margin),  # Top (before fold)
+        QPointF(margin + note_width, margin + fold_size),  # After fold
+        QPointF(margin + note_width, margin + note_height),  # Bottom-right
+        QPointF(margin, margin + note_height),  # Bottom-left
+    ]
+    painter.drawPolygon(QPolygonF(points))
+
+    # Draw the fold line
+    painter.drawLine(
+        int(margin + note_width - fold_size), margin,
+        int(margin + note_width - fold_size), int(margin + fold_size)
+    )
+    painter.drawLine(
+        int(margin + note_width - fold_size), int(margin + fold_size),
+        int(margin + note_width), int(margin + fold_size)
+    )
+
+    # Draw text lines inside
+    line_y = margin + 7
+    line_margin = 5
+    painter.setPen(QPen(color, 1))
+    for i in range(3):
+        if line_y + 3 < margin + note_height - 3:
+            painter.drawLine(
+                int(margin + line_margin), int(line_y),
+                int(margin + note_width - line_margin - 2), int(line_y)
+            )
+            line_y += 4
+
+    painter.end()
+    return QIcon(pixmap)
+
+
 class MeasurementToolBar(QFrame):
     """
     Toolbar for measurement tools in preview mode.
@@ -96,6 +155,7 @@ class MeasurementToolBar(QFrame):
     # Signals
     create_measurement = Signal()  # Emitted when create measurement is clicked
     create_polygon = Signal()  # Emitted when create polygon is clicked
+    create_memo = Signal()  # Emitted when create memo is clicked
     confirm_measurement = Signal()  # Emitted when confirm button is clicked
     clear_all = Signal()  # Emitted when clear all button is clicked
     clear_last = Signal()  # Emitted when clear last button is clicked
@@ -137,6 +197,15 @@ class MeasurementToolBar(QFrame):
         self._create_polygon_btn.setShortcut("P")
         self._create_polygon_btn.clicked.connect(self._on_create_polygon)
         layout.addWidget(self._create_polygon_btn)
+
+        # Create memo pad button with icon
+        self._create_memo_btn = QToolButton()
+        self._create_memo_btn.setIcon(create_memo_icon(24, QColor(255, 255, 150)))  # Yellow for memo
+        self._create_memo_btn.setIconSize(QSize(20, 20))
+        self._create_memo_btn.setToolTip("Add memo pad (N)\nRight-click on image for more options")
+        self._create_memo_btn.setShortcut("N")
+        self._create_memo_btn.clicked.connect(self._on_create_memo)
+        layout.addWidget(self._create_memo_btn)
 
         # Measurement count label
         self._count_label = QLabel("0")
@@ -218,6 +287,10 @@ class MeasurementToolBar(QFrame):
         self._count_label.setText(str(self._measurement_count))
         self.create_polygon.emit()
 
+    def _on_create_memo(self):
+        """Handle create memo button click."""
+        self.create_memo.emit()
+
     def _on_clear_last(self):
         """Handle clear last button click."""
         if self._measurement_count > 0:
@@ -292,6 +365,9 @@ class MeasurementToolBar(QFrame):
         icon_color = QColor(200, 200, 200) if self._is_dark_mode else QColor(80, 80, 80)
         self._create_btn.setIcon(create_measurement_icon(24, icon_color))
         self._create_polygon_btn.setIcon(create_polygon_icon(24, icon_color))
+        # Memo icon stays yellow/gold for sticky note appearance
+        memo_color = QColor(255, 220, 100) if self._is_dark_mode else QColor(200, 170, 50)
+        self._create_memo_btn.setIcon(create_memo_icon(24, memo_color))
 
         if self._is_dark_mode:
             # Dark theme

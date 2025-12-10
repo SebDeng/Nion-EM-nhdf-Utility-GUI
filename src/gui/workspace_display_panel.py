@@ -111,6 +111,8 @@ class WorkspaceDisplayPanel(WorkspacePanel):
             data['display_range'] = self.get_display_range()
             data['auto_scale'] = self.get_auto_scale()
             data['scale_bar_visible'] = self.get_scale_bar_visible()
+            # Save memo pad data
+            data['memos'] = self.display_panel.get_memos_data()
         return data
 
     def restore_state(self, state: dict):
@@ -147,6 +149,10 @@ class WorkspaceDisplayPanel(WorkspacePanel):
         if 'scale_bar_visible' in state:
             if hasattr(self.display_panel, '_scale_bar_check'):
                 self.display_panel._scale_bar_check.setChecked(state['scale_bar_visible'])
+
+        # Restore memo pads
+        if 'memos' in state and state['memos']:
+            self.display_panel.restore_memos(state['memos'])
 
     @classmethod
     def from_dict(cls, data: dict) -> 'WorkspaceDisplayPanel':

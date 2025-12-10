@@ -5,7 +5,7 @@ Display panel for visualizing nhdf data with frame navigation.
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSlider,
     QPushButton, QSpinBox, QComboBox, QFrame, QSizePolicy,
-    QGroupBox, QDoubleSpinBox, QCheckBox
+    QGroupBox, QDoubleSpinBox, QCheckBox, QMenu
 )
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QFont
@@ -20,6 +20,7 @@ from matplotlib import colormaps as mpl_colormaps
 from src.core.nhdf_reader import NHDFData
 from src.gui.line_profile_overlay import LineProfileOverlay, LineProfileData
 from src.gui.measurement_overlay import MeasurementOverlay, MeasurementData
+from src.gui.memo_pad import MemoPadManager
 
 
 class ScaleBarItem(pg.GraphicsObject):
@@ -652,6 +653,7 @@ class DisplayPanel(QWidget):
         self._show_controls = show_controls
         self._line_profile_overlay: Optional[LineProfileOverlay] = None
         self._measurement_overlay: Optional[MeasurementOverlay] = None
+        self._memo_manager: Optional[MemoPadManager] = None
 
         self._setup_ui()
 
@@ -691,6 +693,13 @@ class DisplayPanel(QWidget):
         # Measurement overlay
         self._measurement_overlay = MeasurementOverlay(self._plot_item, self._image_item)
         self._measurement_overlay.measurement_created.connect(self.measurement_created.emit)
+
+        # Memo pad manager (memos float over the graphics widget)
+        self._memo_manager = MemoPadManager(self._graphics_widget)
+
+        # Setup context menu for right-click
+        self._graphics_widget.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._graphics_widget.customContextMenuRequested.connect(self._show_context_menu)
 
         # Color bar
         self._colorbar = pg.ColorBarItem(
@@ -1089,6 +1098,10 @@ class DisplayPanel(QWidget):
                     axis_item.setPen(fg_color)
                     axis_item.setTextPen(fg_color)
 
+        # Update memo pad themes
+        if self._memo_manager:
+            self._memo_manager.set_theme(is_dark)
+
     def create_line_profile(self):
         """Create a default line profile that can be dragged."""
         if self._line_profile_overlay:
@@ -1143,3 +1156,73 @@ class DisplayPanel(QWidget):
         """Clear the last measurement."""
         if self._measurement_overlay:
             self._measurement_overlay.clear_last()
+
+    # --- Context Menu ---
+
+    def _show_context_menu(self, pos):
+        """Show the context menu on right-click."""
+        menu = QMenu(self)
+
+        # Add Memo action
+        add_memo_action = menu.addAction("Add Memo")
+        add_memo_action.setEnabled(self.can_add_memo())
+        if not self.can_add_memo():
+            add_memo_action.setText("Add Memo (max 2 reached)")
+
+        menu.addSeparator()
+
+        # Clear memos action (only if there are memos)
+        if self.get_memo_count() > 0:
+            clear_memos_action = menu.addAction(f"Clear All Memos ({self.get_memo_count()})")
+        else:
+            clear_memos_action = None
+
+        # Execute menu
+        action = menu.exec(self._graphics_widget.mapToGlobal(pos))
+
+        if action == add_memo_action and self.can_add_memo():
+            self.create_memo()
+        elif action == clear_memos_action and clear_memos_action:
+            self.clear_memos()
+
+    # --- Memo Pad Methods ---
+
+    def create_memo(self) -> bool:
+        """
+        Create a new memo pad.
+
+        Returns:
+            True if memo was created, False if max memos reached.
+        """
+        if self._memo_manager:
+            memo = self._memo_manager.create_memo()
+            return memo is not None
+        return False
+
+    def can_add_memo(self) -> bool:
+        """Check if more memos can be added."""
+        if self._memo_manager:
+            return self._memo_manager.can_add_memo
+        return False
+
+    def get_memo_count(self) -> int:
+        """Get the number of active memos."""
+        if self._memo_manager:
+            return self._memo_manager.memo_count
+        return 0
+
+    def clear_memos(self):
+        """Clear all memo pads."""
+        if self._memo_manager:
+            self._memo_manager.clear_all()
+
+    def get_memos_data(self) -> list:
+        """Get memo data for serialization."""
+        if self._memo_manager:
+            return self._memo_manager.to_list()
+        return []
+
+    def restore_memos(self, memos_data: list):
+        """Restore memos from serialized data."""
+        if self._memo_manager:
+            self._memo_manager.from_list(memos_data)
