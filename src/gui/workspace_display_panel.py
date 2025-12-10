@@ -88,15 +88,62 @@ class WorkspaceDisplayPanel(WorkspacePanel):
             return self.display_panel._frame_slider.value() if hasattr(self.display_panel, '_frame_slider') else 0
         return None
 
+    def get_auto_scale(self) -> bool:
+        """Get the auto scale setting from the display panel."""
+        if self.display_panel and hasattr(self.display_panel, '_auto_scale_check'):
+            return self.display_panel._auto_scale_check.isChecked()
+        return True
+
+    def get_scale_bar_visible(self) -> bool:
+        """Get whether the scale bar is visible."""
+        if self.display_panel and hasattr(self.display_panel, '_scale_bar_check'):
+            return self.display_panel._scale_bar_check.isChecked()
+        return True
+
     def to_dict(self) -> dict:
-        """Serialize panel to dictionary."""
+        """Serialize panel to dictionary for session save."""
         data = super().to_dict()
         data['type'] = 'display_panel'
         data['file_path'] = self.current_file_path
         if self.display_panel:
             data['colormap'] = self.get_current_colormap()
             data['frame'] = self.get_current_frame()
+            data['display_range'] = self.get_display_range()
+            data['auto_scale'] = self.get_auto_scale()
+            data['scale_bar_visible'] = self.get_scale_bar_visible()
         return data
+
+    def restore_state(self, state: dict):
+        """Restore panel state from dictionary (after data is loaded)."""
+        if not self.display_panel:
+            return
+
+        # Restore colormap
+        if 'colormap' in state and state['colormap']:
+            self.display_panel.set_colormap(state['colormap'])
+
+        # Restore display range and auto scale
+        if 'auto_scale' in state:
+            if hasattr(self.display_panel, '_auto_scale_check'):
+                self.display_panel._auto_scale_check.setChecked(state['auto_scale'])
+
+        if 'display_range' in state and state['display_range'] and not state.get('auto_scale', True):
+            display_range = state['display_range']
+            if display_range and len(display_range) == 2:
+                if hasattr(self.display_panel, '_min_spin'):
+                    self.display_panel._min_spin.setValue(display_range[0])
+                if hasattr(self.display_panel, '_max_spin'):
+                    self.display_panel._max_spin.setValue(display_range[1])
+
+        # Restore frame
+        if 'frame' in state and state['frame'] is not None:
+            if hasattr(self.display_panel, '_frame_slider'):
+                self.display_panel._frame_slider.setValue(state['frame'])
+
+        # Restore scale bar visibility
+        if 'scale_bar_visible' in state:
+            if hasattr(self.display_panel, '_scale_bar_check'):
+                self.display_panel._scale_bar_check.setChecked(state['scale_bar_visible'])
 
     @classmethod
     def from_dict(cls, data: dict) -> 'WorkspaceDisplayPanel':

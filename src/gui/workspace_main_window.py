@@ -23,6 +23,7 @@ from src.gui.metadata_panel import MetadataPanel
 from src.gui.export_dialog import ExportDialog
 from src.gui.workspace import WorkspaceWidget, WorkspacePanel
 from src.gui.workspace_display_panel import WorkspaceDisplayPanel
+from src.gui.workspace_manager import WorkspaceManager, SessionManager, WorkspaceState
 from src.gui.unified_control_panel import UnifiedControlPanel
 from src.gui.view_mode_toolbar import ViewModeToolBar
 from src.gui.mode_manager import ModeManager
@@ -47,12 +48,19 @@ class WorkspaceMainWindow(QMainWindow):
         self._current_display_panel = None  # Track active display panel for reference
         self._measurement_connected_panels: Set[int] = set()  # Track panels with measurement signal connected
 
+        # Initialize workspace and session managers
+        self._workspace_manager = WorkspaceManager(self)
+        self._session_manager = SessionManager(self._workspace_manager, self)
+
         self._setup_ui()
         self._setup_menus()
         self._setup_statusbar()
         self._connect_signals()
         self._restore_state()
         self._load_default_layouts()
+
+        # Initialize first workspace
+        self._init_default_workspace()
 
     def _setup_ui(self):
         """Set up the main UI layout with workspace."""
@@ -190,6 +198,27 @@ class WorkspaceMainWindow(QMainWindow):
 
         file_menu.addSeparator()
 
+        # Session menu items
+        new_session_action = QAction("New &Session", self)
+        new_session_action.triggered.connect(self._on_new_session)
+        file_menu.addAction(new_session_action)
+
+        open_session_action = QAction("Open S&ession...", self)
+        open_session_action.triggered.connect(self._on_open_session)
+        file_menu.addAction(open_session_action)
+
+        save_session_action = QAction("&Save Session", self)
+        save_session_action.setShortcut(QKeySequence("Ctrl+S"))
+        save_session_action.triggered.connect(self._on_save_session)
+        file_menu.addAction(save_session_action)
+
+        save_session_as_action = QAction("Save Session &As...", self)
+        save_session_as_action.setShortcut(QKeySequence("Ctrl+Shift+S"))
+        save_session_as_action.triggered.connect(self._on_save_session_as)
+        file_menu.addAction(save_session_as_action)
+
+        file_menu.addSeparator()
+
         exit_action = QAction("E&xit", self)
         exit_action.setShortcut(QKeySequence.Quit)
         exit_action.triggered.connect(self.close)
@@ -253,6 +282,12 @@ class WorkspaceMainWindow(QMainWindow):
         reset_layout_action = QAction("&Reset Layout", self)
         reset_layout_action.triggered.connect(self._reset_layout)
         workspace_menu.addAction(reset_layout_action)
+
+        view_menu.addSeparator()
+
+        # Workspaces submenu (for multi-workspace management)
+        self._workspaces_menu = view_menu.addMenu("W&orkspaces")
+        self._setup_workspaces_menu()
 
         view_menu.addSeparator()
 
@@ -1535,6 +1570,404 @@ class WorkspaceMainWindow(QMainWindow):
         layout.addStretch()
 
         dialog.exec()
+
+    # --- Workspace Management Methods ---
+
+    def _init_default_workspace(self):
+        """Initialize the first default workspace."""
+        if self._workspace_manager.workspace_count == 0:
+            workspace = self._workspace_manager.new_workspace("Workspace 1")
+            self._workspace_manager.set_current_workspace(workspace.uuid)
+
+    def _setup_workspaces_menu(self):
+        """Set up the Workspaces submenu with workspace list and actions."""
+        self._workspaces_menu.clear()
+
+        # New workspace action
+        new_ws_action = QAction("&New Workspace", self)
+        new_ws_action.setShortcut(QKeySequence("Ctrl+Shift+N"))
+        new_ws_action.triggered.connect(self._on_new_workspace)
+        self._workspaces_menu.addAction(new_ws_action)
+
+        # Clone workspace action
+        clone_ws_action = QAction("&Clone Current Workspace", self)
+        clone_ws_action.triggered.connect(self._on_clone_workspace)
+        self._workspaces_menu.addAction(clone_ws_action)
+
+        # Rename workspace action
+        rename_ws_action = QAction("&Rename Current Workspace...", self)
+        rename_ws_action.triggered.connect(self._on_rename_workspace)
+        self._workspaces_menu.addAction(rename_ws_action)
+
+        # Delete workspace action
+        delete_ws_action = QAction("&Delete Current Workspace", self)
+        delete_ws_action.triggered.connect(self._on_delete_workspace)
+        self._workspaces_menu.addAction(delete_ws_action)
+
+        self._workspaces_menu.addSeparator()
+
+        # Navigation actions
+        next_ws_action = QAction("Next &Workspace", self)
+        next_ws_action.setShortcut(QKeySequence("Ctrl+Tab"))
+        next_ws_action.triggered.connect(self._on_next_workspace)
+        self._workspaces_menu.addAction(next_ws_action)
+
+        prev_ws_action = QAction("&Previous Workspace", self)
+        prev_ws_action.setShortcut(QKeySequence("Ctrl+Shift+Tab"))
+        prev_ws_action.triggered.connect(self._on_previous_workspace)
+        self._workspaces_menu.addAction(prev_ws_action)
+
+        self._workspaces_menu.addSeparator()
+
+        # Add workspace list
+        self._update_workspace_list_menu()
+
+    def _update_workspace_list_menu(self):
+        """Update the workspace list in the menu."""
+        # Find the separator after the navigation items
+        actions = self._workspaces_menu.actions()
+
+        # Remove existing workspace entries (after the second separator)
+        separator_count = 0
+        for action in actions[:]:
+            if action.isSeparator():
+                separator_count += 1
+            elif separator_count >= 2:
+                self._workspaces_menu.removeAction(action)
+
+        # Add current workspaces
+        current_uuid = self._workspace_manager.current_workspace_uuid
+        for i, workspace in enumerate(self._workspace_manager.workspaces):
+            action = QAction(workspace.name, self)
+            action.setCheckable(True)
+            action.setChecked(workspace.uuid == current_uuid)
+
+            # Add shortcut for first 9 workspaces
+            if i < 9:
+                action.setShortcut(QKeySequence(f"Alt+{i + 1}"))
+
+            # Connect with workspace UUID
+            uuid = workspace.uuid  # Capture in closure
+            action.triggered.connect(lambda checked, uid=uuid: self._switch_to_workspace(uid))
+
+            self._workspaces_menu.addAction(action)
+
+    def _on_new_workspace(self):
+        """Create a new workspace."""
+        # Save current workspace state first
+        self._save_current_workspace_state()
+
+        # Create new workspace
+        workspace = self._workspace_manager.new_workspace()
+        self._switch_to_workspace(workspace.uuid)
+
+        self._statusbar.showMessage(f"Created new workspace: {workspace.name}")
+
+    def _on_clone_workspace(self):
+        """Clone the current workspace."""
+        current = self._workspace_manager.current_workspace
+        if not current:
+            return
+
+        # Save current state first
+        self._save_current_workspace_state()
+
+        # Clone
+        clone = self._workspace_manager.clone_workspace(current.uuid)
+        if clone:
+            self._switch_to_workspace(clone.uuid)
+            self._statusbar.showMessage(f"Cloned workspace: {clone.name}")
+
+    def _on_rename_workspace(self):
+        """Rename the current workspace."""
+        current = self._workspace_manager.current_workspace
+        if not current:
+            return
+
+        name, ok = QInputDialog.getText(
+            self, "Rename Workspace",
+            "Enter new workspace name:",
+            text=current.name
+        )
+
+        if ok and name.strip():
+            self._workspace_manager.rename_workspace(current.uuid, name.strip())
+            self._update_workspace_list_menu()
+            self._update_window_title()
+            self._statusbar.showMessage(f"Renamed workspace to: {name.strip()}")
+
+    def _on_delete_workspace(self):
+        """Delete the current workspace."""
+        current = self._workspace_manager.current_workspace
+        if not current:
+            return
+
+        if self._workspace_manager.workspace_count <= 1:
+            QMessageBox.warning(
+                self, "Cannot Delete",
+                "Cannot delete the last workspace."
+            )
+            return
+
+        reply = QMessageBox.question(
+            self, "Delete Workspace",
+            f"Are you sure you want to delete workspace '{current.name}'?\n"
+            "All panels in this workspace will be closed.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            # Get next workspace to switch to
+            next_uuid = self._workspace_manager.get_next_workspace_uuid()
+            if next_uuid == current.uuid:
+                next_uuid = self._workspace_manager.get_previous_workspace_uuid()
+
+            # Delete current workspace
+            self._workspace_manager.delete_workspace(current.uuid)
+
+            # Switch to next workspace
+            if next_uuid:
+                self._switch_to_workspace(next_uuid)
+
+            self._statusbar.showMessage("Workspace deleted")
+
+    def _on_next_workspace(self):
+        """Switch to the next workspace."""
+        next_uuid = self._workspace_manager.get_next_workspace_uuid()
+        if next_uuid:
+            self._save_current_workspace_state()
+            self._switch_to_workspace(next_uuid)
+
+    def _on_previous_workspace(self):
+        """Switch to the previous workspace."""
+        prev_uuid = self._workspace_manager.get_previous_workspace_uuid()
+        if prev_uuid:
+            self._save_current_workspace_state()
+            self._switch_to_workspace(prev_uuid)
+
+    def _save_current_workspace_state(self):
+        """Save the current workspace's state before switching."""
+        if not self._workspace_manager.current_workspace:
+            return
+
+        # Get current layout from workspace widget
+        layout = self._workspace.to_dict()
+
+        # Get panel states
+        panel_states = {}
+        for panel in self._workspace.panels:
+            if isinstance(panel, WorkspaceDisplayPanel):
+                panel_states[panel.panel_id] = panel.to_dict()
+
+        # Get measurements from current panel
+        measurements = []
+        if self._current_display_panel and hasattr(self._current_display_panel.display_panel, '_measurement_overlay'):
+            overlay = self._current_display_panel.display_panel._measurement_overlay
+            if overlay:
+                # Serialize line measurements
+                for line_roi in overlay.active_line_rois:
+                    pos = line_roi.getLocalHandlePositions()
+                    if len(pos) >= 2:
+                        measurements.append({
+                            'type': 'line',
+                            'start': [pos[0][1].x(), pos[0][1].y()],
+                            'end': [pos[1][1].x(), pos[1][1].y()]
+                        })
+                # Serialize polygon measurements
+                for poly_roi in overlay.active_polygon_rois:
+                    vertices = []
+                    for info, pt in poly_roi.getLocalHandlePositions():
+                        vertices.append([pt.x(), pt.y()])
+                    if vertices:
+                        measurements.append({
+                            'type': 'polygon',
+                            'vertices': vertices
+                        })
+
+        # Update workspace state
+        self._workspace_manager.update_current_workspace_state(
+            layout=layout,
+            panel_states=panel_states,
+            measurements=measurements
+        )
+
+    def _switch_to_workspace(self, workspace_uuid: str):
+        """Switch to a different workspace."""
+        workspace = self._workspace_manager.get_workspace(workspace_uuid)
+        if not workspace:
+            return
+
+        # Set as current
+        self._workspace_manager.set_current_workspace(workspace_uuid)
+
+        # Restore workspace layout
+        self._workspace.from_dict(workspace.layout)
+
+        # Restore panel states (file loading, display settings)
+        for panel in self._workspace.panels:
+            if isinstance(panel, WorkspaceDisplayPanel):
+                state = workspace.panel_states.get(panel.panel_id, {})
+                file_path = state.get('file_path')
+
+                if file_path:
+                    # Check if file is already loaded in cache
+                    if file_path in self._loaded_files:
+                        data = self._loaded_files[file_path]
+                    else:
+                        # Load file
+                        try:
+                            data = read_em_file(file_path)
+                            self._loaded_files[file_path] = data
+                        except Exception as e:
+                            print(f"Error loading file {file_path}: {e}")
+                            continue
+
+                    panel.set_data(data, file_path)
+                    panel.restore_state(state)
+
+        # Update menu
+        self._update_workspace_list_menu()
+        self._update_window_title()
+
+        # Update status
+        self._statusbar.showMessage(f"Switched to workspace: {workspace.name}")
+
+    def _update_window_title(self):
+        """Update the window title to show current workspace."""
+        base_title = "Nion nhdf Utility - Workspace Edition"
+        current = self._workspace_manager.current_workspace
+        if current:
+            session_name = self._session_manager.session_name
+            modified = "*" if self._session_manager.is_modified else ""
+            self.setWindowTitle(f"{base_title} - [{current.name}] - {session_name}{modified}")
+        else:
+            self.setWindowTitle(base_title)
+
+    # --- Session Management Methods ---
+
+    def _on_new_session(self):
+        """Create a new session."""
+        if self._session_manager.is_modified:
+            reply = QMessageBox.question(
+                self, "Unsaved Changes",
+                "Current session has unsaved changes. Do you want to save before creating a new session?",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save
+            )
+
+            if reply == QMessageBox.Save:
+                if not self._on_save_session():
+                    return  # Save was cancelled
+            elif reply == QMessageBox.Cancel:
+                return
+
+        # Clear and create new session
+        self._session_manager.new_session()
+
+        # Reset workspace widget
+        self._workspace.from_dict({'type': 'panel'})
+
+        # Update UI
+        self._update_workspace_list_menu()
+        self._update_window_title()
+        self._statusbar.showMessage("New session created")
+
+    def _on_open_session(self):
+        """Open an existing session."""
+        if self._session_manager.is_modified:
+            reply = QMessageBox.question(
+                self, "Unsaved Changes",
+                "Current session has unsaved changes. Do you want to save before opening another session?",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save
+            )
+
+            if reply == QMessageBox.Save:
+                if not self._on_save_session():
+                    return
+            elif reply == QMessageBox.Cancel:
+                return
+
+        # Show file dialog
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Open Session",
+            str(pathlib.Path.home()),
+            "Session Files (*.json);;All Files (*)"
+        )
+
+        if file_path:
+            if self._session_manager.load_session(file_path):
+                # Restore current workspace
+                current = self._workspace_manager.current_workspace
+                if current:
+                    self._switch_to_workspace(current.uuid)
+
+                self._update_workspace_list_menu()
+                self._update_window_title()
+                self._statusbar.showMessage(f"Session loaded: {file_path}")
+            else:
+                QMessageBox.warning(
+                    self, "Error",
+                    f"Failed to load session from {file_path}"
+                )
+
+    def _on_save_session(self) -> bool:
+        """Save the current session."""
+        # Save current workspace state first
+        self._save_current_workspace_state()
+
+        if self._session_manager.current_session_path:
+            if self._session_manager.save_session():
+                self._update_window_title()
+                self._statusbar.showMessage("Session saved")
+                return True
+            else:
+                QMessageBox.warning(
+                    self, "Error",
+                    "Failed to save session"
+                )
+                return False
+        else:
+            return self._on_save_session_as()
+
+    def _on_save_session_as(self) -> bool:
+        """Save the current session to a new file."""
+        # Save current workspace state first
+        self._save_current_workspace_state()
+
+        # Ask for session name
+        name, ok = QInputDialog.getText(
+            self, "Session Name",
+            "Enter a name for this session:",
+            text=self._session_manager.session_name
+        )
+
+        if not ok:
+            return False
+
+        self._session_manager.session_name = name.strip() if name.strip() else "Untitled Session"
+
+        # Show file dialog
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save Session As",
+            str(pathlib.Path.home() / f"{self._session_manager.session_name}.json"),
+            "Session Files (*.json);;All Files (*)"
+        )
+
+        if file_path:
+            if self._session_manager.save_session(file_path):
+                self._update_window_title()
+                self._statusbar.showMessage(f"Session saved: {file_path}")
+                return True
+            else:
+                QMessageBox.warning(
+                    self, "Error",
+                    f"Failed to save session to {file_path}"
+                )
+                return False
+
+        return False
 
     # --- Public API ---
 
