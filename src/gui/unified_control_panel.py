@@ -167,19 +167,28 @@ class UnifiedControlPanel(QFrame):
         self._frame_section.hide()  # Hidden by default
         main_layout.addWidget(self._frame_section)
 
-    def set_current_panel(self, panel):
-        """Set the current panel to control."""
-        if self._current_panel == panel:
+    def set_current_panel(self, panel, force_sync: bool = False):
+        """Set the current panel to control.
+
+        Args:
+            panel: The panel to control
+            force_sync: If True, force a re-sync even if same panel (useful after data load)
+        """
+        is_same_panel = (self._current_panel == panel)
+
+        if is_same_panel and not force_sync:
             return
 
-        # Disconnect from old panel if exists
-        if self._current_panel:
+        # Disconnect from old panel if exists (only if different panel)
+        if self._current_panel and not is_same_panel:
             self._disconnect_from_panel(self._current_panel)
 
         self._current_panel = panel
 
         if panel and hasattr(panel, 'display_panel') and panel.display_panel:
-            self._connect_to_panel(panel)
+            # Only connect signals if this is a new panel
+            if not is_same_panel:
+                self._connect_to_panel(panel)
             self._sync_from_panel(panel)
             self._set_enabled_state(True)
 

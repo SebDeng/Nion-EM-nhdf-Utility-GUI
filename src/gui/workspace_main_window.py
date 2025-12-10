@@ -1226,7 +1226,8 @@ class WorkspaceMainWindow(QMainWindow):
             # Update histogram when data is loaded
             self._update_histogram_for_panel(panel)
             # Re-sync unified controls to update subscan checkbox state
-            self._update_unified_controls(panel)
+            # Use force_sync=True because the panel is the same but data changed
+            self._unified_controls.set_current_panel(panel, force_sync=True)
 
         self._update_export_actions()
 
