@@ -99,23 +99,39 @@ class DraggableDistanceLabel(pg.GraphicsObject):
         # Important: Ignore transformations so text doesn't flip with image
         self.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
 
-    def set_text(self, text: str):
+    def set_text(self, text: str, defer_update: bool = False):
         """Set the distance text to display."""
+        if self._text == text:
+            return  # Skip if unchanged
         self._text = text
-        self.update()
+        if not defer_update:
+            self.update()
 
     def set_color(self, color: str):
         """Set the label color."""
         self._color = color
         self.update()
 
-    def set_anchor_position(self, x: float, y: float):
+    def set_anchor_position(self, x: float, y: float, defer_update: bool = False):
         """Set the anchor position (measurement line midpoint) in item coordinates."""
-        self._anchor_pos = QPointF(x, y)
+        new_pos = QPointF(x, y)
+        if self._anchor_pos == new_pos:
+            return  # Skip if unchanged
+        self._anchor_pos = new_pos
         # Update label position based on anchor + user offset
         self._label_pos = self._anchor_pos + self._user_offset
         # Move the item to the anchor position (for ItemIgnoresTransformations)
         self.setPos(self._anchor_pos)
+        if not defer_update:
+            self.prepareGeometryChange()
+            self.update()
+
+    def update_position_and_text(self, x: float, y: float, text: str):
+        """Batch update position and text in a single repaint."""
+        self._anchor_pos = QPointF(x, y)
+        self._label_pos = self._anchor_pos + self._user_offset
+        self.setPos(self._anchor_pos)
+        self._text = text
         self.prepareGeometryChange()
         self.update()
 
@@ -407,21 +423,37 @@ class DraggableAreaLabel(pg.GraphicsObject):
         self.setAcceptedMouseButtons(Qt.LeftButton)
         self.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
 
-    def set_text(self, text: str):
+    def set_text(self, text: str, defer_update: bool = False):
         """Set the area text to display."""
+        if self._text == text:
+            return  # Skip if unchanged
         self._text = text
-        self.update()
+        if not defer_update:
+            self.update()
 
     def set_color(self, color: str):
         """Set the label color."""
         self._color = color
         self.update()
 
-    def set_anchor_position(self, x: float, y: float):
+    def set_anchor_position(self, x: float, y: float, defer_update: bool = False):
         """Set the anchor position (polygon centroid)."""
+        new_pos = QPointF(x, y)
+        if self._anchor_pos == new_pos:
+            return  # Skip if unchanged
+        self._anchor_pos = new_pos
+        self._label_pos = self._anchor_pos + self._user_offset
+        self.setPos(self._anchor_pos)
+        if not defer_update:
+            self.prepareGeometryChange()
+            self.update()
+
+    def update_position_and_text(self, x: float, y: float, text: str):
+        """Batch update position and text in a single repaint."""
         self._anchor_pos = QPointF(x, y)
         self._label_pos = self._anchor_pos + self._user_offset
         self.setPos(self._anchor_pos)
+        self._text = text
         self.prepareGeometryChange()
         self.update()
 
@@ -855,11 +887,44 @@ class MeasurementOverlay(QObject):
         self._emit_measurement_data_for_roi(line_roi)
 
     def _on_line_changed(self, line_roi: pg.LineSegmentROI):
-        """Handle changes to a measurement line ROI."""
+        """Handle changes to a measurement line ROI - lightweight update during drag."""
         if line_roi in self.active_line_rois:
-            self._emit_measurement_data_for_roi(line_roi)
+            # Lightweight label update only (no signal emission for performance)
+            self._update_line_label_lightweight(line_roi)
             # Show snap indicator if near a snap point (during dragging)
             self._update_snap_indicator(line_roi)
+
+    def _update_line_label_lightweight(self, line_roi: pg.LineSegmentROI):
+        """Update line label position and text without emitting signals."""
+        if line_roi not in self._line_labels:
+            return
+
+        # Get handle positions
+        handles = line_roi.getLocalHandlePositions()
+        if len(handles) < 2:
+            return
+
+        p1 = handles[0][1]
+        p2 = handles[1][1]
+        roi_pos = line_roi.pos()
+        x1 = roi_pos.x() + p1.x()
+        y1 = roi_pos.y() + p1.y()
+        x2 = roi_pos.x() + p2.x()
+        y2 = roi_pos.y() + p2.y()
+
+        # Calculate midpoint
+        mid_x = (x1 + x2) / 2
+        mid_y = (y1 + y2) / 2
+
+        # Calculate distance
+        distance_px = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+        distance_nm = None
+        if self.calibration and hasattr(self.calibration, 'scale'):
+            distance_nm = distance_px * self.calibration.scale
+
+        # Update label with batched update
+        label = self._line_labels[line_roi]
+        label.update_position_and_text(mid_x, mid_y, self._format_distance_text(distance_px, distance_nm))
 
     def _update_snap_indicator(self, line_roi: pg.LineSegmentROI):
         """Update snap indicator to show which snap point we're near."""
@@ -1258,19 +1323,41 @@ class MeasurementOverlay(QObject):
         label.reset_position()
 
         # Connect to ROI changes
-        polygon_roi.sigRegionChanged.connect(lambda: self._on_polygon_changed(polygon_roi))
+        # Use lightweight update during drag, full emit on finish
+        polygon_roi.sigRegionChanged.connect(lambda: self._on_polygon_changed_lightweight(polygon_roi))
         polygon_roi.sigRegionChangeFinished.connect(lambda: self._on_polygon_change_finished(polygon_roi))
 
         # Emit initial measurement
         self._emit_polygon_area_data(polygon_roi)
 
-    def _on_polygon_changed(self, polygon_roi: pg.PolyLineROI):
-        """Handle changes to a polygon ROI."""
-        if polygon_roi in self.active_polygon_rois:
-            self._emit_polygon_area_data(polygon_roi)
+    def _on_polygon_changed_lightweight(self, polygon_roi: pg.PolyLineROI):
+        """Lightweight update during polygon drag - only update label, no signal emission."""
+        if polygon_roi not in self.active_polygon_rois:
+            return
+
+        # Get vertices and calculate area/centroid (fast operations)
+        vertices = self._get_polygon_vertices(polygon_roi)
+        if len(vertices) < 3:
+            return
+
+        area_px = self._calculate_polygon_area(vertices)
+        centroid = self._calculate_polygon_centroid(vertices)
+
+        # Get calibrated area if available
+        area_nm2 = None
+        if self.calibration and hasattr(self.calibration, 'scale'):
+            area_nm2 = area_px * (self.calibration.scale ** 2)
+
+        # Update label with batched update (single repaint)
+        if polygon_roi in self._polygon_labels:
+            label = self._polygon_labels[polygon_roi]
+            label.update_position_and_text(
+                centroid[0], centroid[1],
+                self._format_area_text(area_px, area_nm2)
+            )
 
     def _on_polygon_change_finished(self, polygon_roi: pg.PolyLineROI):
-        """Handle when polygon ROI change is finished."""
+        """Handle when polygon ROI change is finished - emit full data."""
         if polygon_roi in self.active_polygon_rois:
             self._emit_polygon_area_data(polygon_roi)
 
