@@ -87,6 +87,48 @@ def create_polygon_icon(size: int = 24, color: QColor = None) -> QIcon:
     return QIcon(pixmap)
 
 
+def create_dose_icon(size: int = 24, color: QColor = None) -> QIcon:
+    """Create an electron dose / radiation icon."""
+    if color is None:
+        color = QColor(200, 200, 200)
+
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+
+    pen = QPen(color)
+    pen.setWidth(2)
+    painter.setPen(pen)
+
+    center_x = size // 2
+    center_y = size // 2
+    radius = size // 2 - 4
+
+    # Draw outer circle (atom symbol)
+    painter.drawEllipse(center_x - radius, center_y - radius, radius * 2, radius * 2)
+
+    # Draw inner filled circle (nucleus)
+    inner_radius = 3
+    painter.setBrush(color)
+    painter.drawEllipse(center_x - inner_radius, center_y - inner_radius,
+                        inner_radius * 2, inner_radius * 2)
+
+    # Draw electron orbits (3 small circles on the ring)
+    import math
+    orbit_radius = 2
+    for angle in [0, 120, 240]:
+        rad = math.radians(angle - 90)
+        ex = center_x + int(radius * math.cos(rad))
+        ey = center_y + int(radius * math.sin(rad))
+        painter.drawEllipse(ex - orbit_radius, ey - orbit_radius,
+                            orbit_radius * 2, orbit_radius * 2)
+
+    painter.end()
+    return QIcon(pixmap)
+
+
 def create_memo_icon(size: int = 24, color: QColor = None) -> QIcon:
     """Create a sticky note / memo pad icon."""
     if color is None:
@@ -156,6 +198,7 @@ class MeasurementToolBar(QFrame):
     create_measurement = Signal()  # Emitted when create measurement is clicked
     create_polygon = Signal()  # Emitted when create polygon is clicked
     create_memo = Signal()  # Emitted when create memo is clicked
+    open_dose_calculator = Signal()  # Emitted when dose calculator is clicked
     confirm_measurement = Signal()  # Emitted when confirm button is clicked
     clear_all = Signal()  # Emitted when clear all button is clicked
     clear_last = Signal()  # Emitted when clear last button is clicked
@@ -206,6 +249,15 @@ class MeasurementToolBar(QFrame):
         self._create_memo_btn.setShortcut("N")
         self._create_memo_btn.clicked.connect(self._on_create_memo)
         layout.addWidget(self._create_memo_btn)
+
+        # Dose calculator button with icon
+        self._dose_calc_btn = QToolButton()
+        self._dose_calc_btn.setIcon(create_dose_icon(24, QColor(100, 200, 255)))  # Light blue for dose
+        self._dose_calc_btn.setIconSize(QSize(20, 20))
+        self._dose_calc_btn.setToolTip("Electron Dose Calculator (D)")
+        self._dose_calc_btn.setShortcut("D")
+        self._dose_calc_btn.clicked.connect(self._on_dose_calculator)
+        layout.addWidget(self._dose_calc_btn)
 
         # Measurement count label
         self._count_label = QLabel("0")
@@ -291,6 +343,10 @@ class MeasurementToolBar(QFrame):
         """Handle create memo button click."""
         self.create_memo.emit()
 
+    def _on_dose_calculator(self):
+        """Handle dose calculator button click."""
+        self.open_dose_calculator.emit()
+
     def _on_clear_last(self):
         """Handle clear last button click."""
         if self._measurement_count > 0:
@@ -368,6 +424,9 @@ class MeasurementToolBar(QFrame):
         # Memo icon stays yellow/gold for sticky note appearance
         memo_color = QColor(255, 220, 100) if self._is_dark_mode else QColor(200, 170, 50)
         self._create_memo_btn.setIcon(create_memo_icon(24, memo_color))
+        # Dose icon uses light blue / darker blue
+        dose_color = QColor(100, 200, 255) if self._is_dark_mode else QColor(50, 120, 180)
+        self._dose_calc_btn.setIcon(create_dose_icon(24, dose_color))
 
         if self._is_dark_mode:
             # Dark theme

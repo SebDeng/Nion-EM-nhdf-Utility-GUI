@@ -26,6 +26,8 @@ class DoseCalculatorDialog(QDialog):
 
     # Signal emitted when calculation is updated
     dose_calculated = Signal(dict)
+    # Signal emitted when user wants to add result to panel
+    add_to_panel = Signal(dict, bool)  # (dose_data, use_angstrom)
 
     # Default probe current in pA
     DEFAULT_PROBE_CURRENT = 15.0
@@ -155,8 +157,16 @@ class DoseCalculatorDialog(QDialog):
 
         layout.addWidget(formula_frame)
 
-        # Close button
+        # Buttons
         button_layout = QHBoxLayout()
+
+        # Add to Panel button
+        self._add_to_panel_btn = QPushButton("Add to Panel")
+        self._add_to_panel_btn.setToolTip("Add dose result as floating label on the image panel")
+        self._add_to_panel_btn.clicked.connect(self._on_add_to_panel)
+        self._add_to_panel_btn.setEnabled(False)  # Disabled until calculation done
+        button_layout.addWidget(self._add_to_panel_btn)
+
         button_layout.addStretch()
 
         close_btn = QPushButton("Close")
@@ -230,7 +240,14 @@ class DoseCalculatorDialog(QDialog):
 
         self._last_result = result
         self._update_results_display()
+        self._add_to_panel_btn.setEnabled(True)
         self.dose_calculated.emit(result)
+
+    def _on_add_to_panel(self):
+        """Handle add to panel button click."""
+        if self._last_result:
+            use_angstrom = self._unit_combo.currentIndex() == 1
+            self.add_to_panel.emit(self._last_result, use_angstrom)
 
     def _update_results_display(self):
         """Update results labels with current unit selection."""
@@ -267,6 +284,7 @@ class DoseCalculatorDialog(QDialog):
         self._dose_label.setText("--")
         self._flux_label.setText("--")
         self._last_result = None
+        self._add_to_panel_btn.setEnabled(False)
 
     def get_probe_current(self) -> float:
         """Get the current probe current value."""

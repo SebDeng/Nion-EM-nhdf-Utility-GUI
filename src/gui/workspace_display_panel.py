@@ -113,6 +113,8 @@ class WorkspaceDisplayPanel(WorkspacePanel):
             data['scale_bar_visible'] = self.get_scale_bar_visible()
             # Save memo pad data
             data['memos'] = self.display_panel.get_memos_data()
+            # Save dose label data
+            data['dose_labels'] = self.display_panel.get_dose_labels_data()
         return data
 
     def restore_state(self, state: dict):
@@ -153,6 +155,10 @@ class WorkspaceDisplayPanel(WorkspacePanel):
         # Restore memo pads
         if 'memos' in state and state['memos']:
             self.display_panel.restore_memos(state['memos'])
+
+        # Restore dose labels
+        if 'dose_labels' in state and state['dose_labels']:
+            self.display_panel.restore_dose_labels(state['dose_labels'])
 
     @classmethod
     def from_dict(cls, data: dict) -> 'WorkspaceDisplayPanel':

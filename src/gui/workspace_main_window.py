@@ -91,6 +91,7 @@ class WorkspaceMainWindow(QMainWindow):
         self._measurement_toolbar.create_measurement.connect(self._on_create_measurement)
         self._measurement_toolbar.create_polygon.connect(self._on_create_polygon)
         self._measurement_toolbar.create_memo.connect(self._on_create_memo)
+        self._measurement_toolbar.open_dose_calculator.connect(self._on_show_dose_calculator)
         self._measurement_toolbar.clear_all.connect(self._on_clear_measurements)
         self._measurement_toolbar.clear_last.connect(self._on_clear_last_measurement)
         self._measurement_toolbar.toggle_labels.connect(self._on_toggle_measurement_labels)
@@ -1551,7 +1552,29 @@ class WorkspaceMainWindow(QMainWindow):
             current_data = self._workspace.selected_panel.current_data
 
         dialog = DoseCalculatorDialog(current_data, parent=self)
+        dialog.add_to_panel.connect(self._on_add_dose_to_panel)
         dialog.exec()
+
+    def _on_add_dose_to_panel(self, dose_data: dict, use_angstrom: bool):
+        """Add dose calculation result as a floating label on the panel."""
+        if not isinstance(self._workspace.selected_panel, WorkspaceDisplayPanel):
+            QMessageBox.warning(
+                self,
+                "No Panel Selected",
+                "Please select a display panel first."
+            )
+            return
+
+        panel = self._workspace.selected_panel
+        if not panel.display_panel.can_add_dose_label():
+            QMessageBox.warning(
+                self,
+                "Limit Reached",
+                "Maximum of 2 dose labels per panel. Remove one to add another."
+            )
+            return
+
+        panel.display_panel.add_dose_label(dose_data, use_angstrom)
 
     def _on_about(self):
         """Show about dialog."""

@@ -21,6 +21,7 @@ from src.core.nhdf_reader import NHDFData
 from src.gui.line_profile_overlay import LineProfileOverlay, LineProfileData
 from src.gui.measurement_overlay import MeasurementOverlay, MeasurementData
 from src.gui.memo_pad import MemoPadManager
+from src.gui.dose_label import DoseLabelManager
 
 
 class ScaleBarItem(pg.GraphicsObject):
@@ -654,6 +655,7 @@ class DisplayPanel(QWidget):
         self._line_profile_overlay: Optional[LineProfileOverlay] = None
         self._measurement_overlay: Optional[MeasurementOverlay] = None
         self._memo_manager: Optional[MemoPadManager] = None
+        self._dose_label_manager: Optional[DoseLabelManager] = None
 
         self._setup_ui()
 
@@ -696,6 +698,9 @@ class DisplayPanel(QWidget):
 
         # Memo pad manager (memos float over the graphics widget)
         self._memo_manager = MemoPadManager(self._graphics_widget)
+
+        # Dose label manager (dose labels float over the graphics widget)
+        self._dose_label_manager = DoseLabelManager(self._graphics_widget)
 
         # Setup context menu for right-click
         self._graphics_widget.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -1102,6 +1107,10 @@ class DisplayPanel(QWidget):
         if self._memo_manager:
             self._memo_manager.set_theme(is_dark)
 
+        # Update dose label themes
+        if self._dose_label_manager:
+            self._dose_label_manager.set_theme(is_dark)
+
     def create_line_profile(self):
         """Create a default line profile that can be dragged."""
         if self._line_profile_overlay:
@@ -1226,3 +1235,49 @@ class DisplayPanel(QWidget):
         """Restore memos from serialized data."""
         if self._memo_manager:
             self._memo_manager.from_list(memos_data)
+
+    # --- Dose Label Methods ---
+
+    def add_dose_label(self, dose_data: dict, use_angstrom: bool = False) -> bool:
+        """
+        Add a dose result label to the panel.
+
+        Args:
+            dose_data: Dictionary from NHDFData.calculate_electron_dose()
+            use_angstrom: If True, display in Ų units; otherwise nm²
+
+        Returns:
+            True if label was created, False if max limit reached
+        """
+        if self._dose_label_manager:
+            label = self._dose_label_manager.create_label(dose_data, use_angstrom)
+            return label is not None
+        return False
+
+    def can_add_dose_label(self) -> bool:
+        """Check if more dose labels can be added."""
+        if self._dose_label_manager:
+            return self._dose_label_manager.can_add_label
+        return False
+
+    def get_dose_label_count(self) -> int:
+        """Get the number of active dose labels."""
+        if self._dose_label_manager:
+            return self._dose_label_manager.label_count
+        return 0
+
+    def clear_dose_labels(self):
+        """Clear all dose labels."""
+        if self._dose_label_manager:
+            self._dose_label_manager.clear_all()
+
+    def get_dose_labels_data(self) -> list:
+        """Get dose label data for serialization."""
+        if self._dose_label_manager:
+            return self._dose_label_manager.to_list()
+        return []
+
+    def restore_dose_labels(self, labels_data: list):
+        """Restore dose labels from serialized data."""
+        if self._dose_label_manager:
+            self._dose_label_manager.from_list(labels_data)
