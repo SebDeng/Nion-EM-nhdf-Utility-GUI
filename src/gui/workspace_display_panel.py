@@ -118,9 +118,12 @@ class WorkspaceDisplayPanel(WorkspacePanel):
         if not self.display_panel:
             return
 
-        # Restore colormap
+        # Restore colormap via the combo box
         if 'colormap' in state and state['colormap']:
-            self.display_panel.set_colormap(state['colormap'])
+            if hasattr(self.display_panel, '_colormap_combo'):
+                index = self.display_panel._colormap_combo.findText(state['colormap'])
+                if index >= 0:
+                    self.display_panel._colormap_combo.setCurrentIndex(index)
 
         # Restore display range and auto scale
         if 'auto_scale' in state:
