@@ -13,7 +13,7 @@ import pyqtgraph as pg
 import numpy as np
 from typing import Optional, List
 
-from src.core.nhdf_reader import NHDFData, read_em_file
+from src.core.nhdf_reader import NHDFData, read_em_file, create_nhdf_data_from_array
 from .processing_controls import ProcessingControlsPanel
 from .processing_engine import ProcessingEngine, ProcessingState
 from .node_graph_widget import NodeGraphWidget
@@ -150,6 +150,7 @@ class ProcessingModeWidgetV3(QWidget):
 
     # Signals
     file_loaded = Signal(str, object)
+    send_to_preview_requested = Signal(str, object)  # file_path, NHDFData
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -317,6 +318,14 @@ class ProcessingModeWidgetV3(QWidget):
 
         layout.addStretch()
 
+        # Send to Preview button
+        self.send_to_preview_btn = QPushButton("Send to Preview")
+        self.send_to_preview_btn.setMinimumWidth(120)
+        self.send_to_preview_btn.setToolTip("Send current preview result to Preview Mode for viewing")
+        self.send_to_preview_btn.clicked.connect(self._send_to_preview)
+        self.send_to_preview_btn.setEnabled(False)
+        layout.addWidget(self.send_to_preview_btn)
+
         # Export button
         self.export_btn = QPushButton("Export All...")
         self.export_btn.setMinimumWidth(100)
@@ -462,6 +471,7 @@ class ProcessingModeWidgetV3(QWidget):
         # Enable controls
         self.controls.setEnabled(True)
         self.snapshot_btn.setEnabled(True)
+        self.send_to_preview_btn.setEnabled(True)
 
         # Clear snapshots
         self._clear_snapshots()
@@ -785,6 +795,36 @@ class ProcessingModeWidgetV3(QWidget):
                 return (scale, unit, width, height)
         return None
 
+    def _get_calibration_info(self):
+        """Get full calibration information for NHDF export."""
+        if not self.nhdf_data:
+            return None
+
+        calibration_info = {}
+
+        # Dimensional calibrations
+        dim_cals = self.nhdf_data.dimensional_calibrations
+        if dim_cals:
+            calibration_info['dimensional'] = [
+                {'offset': cal.offset, 'scale': cal.scale, 'units': cal.units}
+                for cal in dim_cals
+            ]
+
+        # Intensity calibration
+        int_cal = self.nhdf_data.intensity_calibration
+        if int_cal:
+            calibration_info['intensity'] = {
+                'offset': int_cal.offset,
+                'scale': int_cal.scale,
+                'units': int_cal.units
+            }
+
+        # Original metadata
+        if self.nhdf_data.raw_properties:
+            calibration_info['metadata'] = self.nhdf_data.raw_properties
+
+        return calibration_info
+
     def _show_export_dialog(self, preselected_id: str = None):
         """Show the export dialog for all snapshots."""
         if not self.engine.states:
@@ -797,6 +837,9 @@ class ProcessingModeWidgetV3(QWidget):
         # Get scale info
         scale_info = self._get_scale_info()
 
+        # Get calibration info for NHDF export
+        calibration_info = self._get_calibration_info()
+
         # Get original file path
         import pathlib
         file_path = pathlib.Path(self.current_file) if self.current_file else None
@@ -806,6 +849,7 @@ class ProcessingModeWidgetV3(QWidget):
             snapshots=self.engine.states,
             original_file_path=file_path,
             scale_info=scale_info,
+            calibration_info=calibration_info,
             parent=self
         )
 
@@ -822,3 +866,36 @@ class ProcessingModeWidgetV3(QWidget):
     def _export_single_snapshot(self, snapshot_id: str):
         """Export a single snapshot."""
         self._show_export_dialog(preselected_id=snapshot_id)
+
+    def _send_to_preview(self):
+        """Send the current preview result to Preview Mode."""
+        # Get the current processed data from the engine
+        processed_data = self.engine.current_data
+        if processed_data is None:
+            QMessageBox.information(
+                self, "No Data",
+                "No processed data available. Apply some processing first."
+            )
+            return
+
+        # Get calibration info from original data
+        calibration_info = self._get_calibration_info()
+
+        # Create NHDFData from the processed numpy array
+        import pathlib
+        source_path = pathlib.Path(self.current_file) if self.current_file else None
+
+        nhdf_data = create_nhdf_data_from_array(
+            data=processed_data,
+            name="Processed",
+            dimensional_calibrations=calibration_info.get('dimensional') if calibration_info else None,
+            intensity_calibration=calibration_info.get('intensity') if calibration_info else None,
+            source_file=source_path,
+            metadata={'processing': 'Live preview result', 'source_file': self.current_file}
+        )
+
+        # Create a virtual file path for display
+        virtual_path = str(nhdf_data.file_path)
+
+        # Emit signal for the main window to handle
+        self.send_to_preview_requested.emit(virtual_path, nhdf_data)

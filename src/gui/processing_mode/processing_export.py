@@ -6,6 +6,8 @@ Allows exporting processed data from snapshots.
 import json
 import pathlib
 import numpy as np
+import uuid
+import h5py
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
@@ -75,12 +77,16 @@ class ProcessingExportSettings:
 
     # Image settings
     export_images: bool = True
-    image_format: str = "tiff"  # tiff, png, jpg
+    image_format: str = "tiff"  # tiff, png, jpg, nhdf
     bit_depth: int = 16  # 8, 16, 32 (32 only for tiff)
     export_all_frames: bool = False
     apply_colormap: bool = False
     colormap_name: str = "viridis"
     include_scale_bar: bool = False
+
+    # NHDF-specific settings
+    export_nhdf: bool = False  # Export as NHDF (scientific format with calibrations)
+    preserve_calibrations: bool = True  # Preserve original calibrations in NHDF
 
     # Video settings
     export_video: bool = False
@@ -102,6 +108,11 @@ class ProcessingExportSettings:
     scale_units: str = "px"
     image_width: int = 0
     image_height: int = 0
+
+    # Full calibration info for NHDF export (list of dicts with offset, scale, units)
+    dimensional_calibrations: Optional[List[Dict]] = None
+    intensity_calibration: Optional[Dict] = None
+    original_metadata: Optional[Dict] = None  # Original file metadata to preserve
 
 
 class ProcessingExporter:
@@ -149,6 +160,8 @@ class ProcessingExporter:
                 else:
                     total_steps += 1
             if settings.export_video:
+                total_steps += 1
+            if settings.export_nhdf:
                 total_steps += 1
             if settings.export_json or settings.export_txt:
                 total_steps += 1
@@ -209,6 +222,15 @@ class ProcessingExporter:
                 current_step += 1
                 if progress_callback:
                     progress_callback(current_step, total_steps, f"{snapshot.name} video complete")
+
+            # Export NHDF (scientific format with calibrations)
+            if settings.export_nhdf and snapshot.processed_data is not None:
+                if progress_callback:
+                    progress_callback(current_step, total_steps, f"Exporting {snapshot.name} as NHDF...")
+                self._export_nhdf(snapshot, snapshot_folder, base_name, settings)
+                current_step += 1
+                if progress_callback:
+                    progress_callback(current_step, total_steps, f"{snapshot.name} NHDF complete")
 
             # Export metadata
             if settings.export_json or settings.export_txt:
@@ -457,6 +479,93 @@ class ProcessingExporter:
         finally:
             writer.close()
 
+    def _export_nhdf(self, snapshot: ProcessingState, output_folder: pathlib.Path,
+                     base_name: str, settings: ProcessingExportSettings):
+        """Export as NHDF (Nion HDF5 format) with calibrations preserved."""
+        output_path = output_folder / f"{base_name}.nhdf"
+        data = snapshot.processed_data
+
+        # Determine data properties
+        is_sequence = len(data.shape) == 3
+        data_shape = list(data.shape)
+
+        # Build dimensional calibrations
+        dim_calibrations = []
+        if settings.dimensional_calibrations and settings.preserve_calibrations:
+            dim_calibrations = settings.dimensional_calibrations
+        else:
+            # Create default calibrations from scale info
+            if is_sequence:
+                # Sequence dimension
+                dim_calibrations.append({
+                    "offset": 0.0,
+                    "scale": 1.0,
+                    "units": ""
+                })
+            # Spatial dimensions
+            for _ in range(2):
+                dim_calibrations.append({
+                    "offset": 0.0,
+                    "scale": settings.scale_per_pixel if settings.scale_per_pixel > 0 else 1.0,
+                    "units": settings.scale_units if settings.scale_units != "px" else ""
+                })
+
+        # Build intensity calibration
+        intensity_cal = {"offset": 0.0, "scale": 1.0, "units": ""}
+        if settings.intensity_calibration and settings.preserve_calibrations:
+            intensity_cal = settings.intensity_calibration
+
+        # Build properties dict (Nion format)
+        properties = {
+            "type": "data-item",
+            "uuid": str(uuid.uuid4()),
+            "created": datetime.now().isoformat(),
+            "data_shape": data_shape,
+            "data_dtype": str(data.dtype),
+            "is_sequence": is_sequence,
+            "collection_dimension_count": 0,
+            "datum_dimension_count": 2,
+            "intensity_calibration": intensity_cal,
+            "dimensional_calibrations": dim_calibrations,
+            "data_modified": datetime.now().isoformat(),
+            "title": snapshot.name,
+            "description": f"Processed from {self._original_file_path.name if self._original_file_path else 'unknown'}"
+        }
+
+        # Add processing parameters to metadata
+        if snapshot.parameters:
+            properties["processing_parameters"] = self._format_params_for_export(snapshot.parameters)
+
+        # Preserve original metadata if available
+        if settings.original_metadata and settings.preserve_calibrations:
+            # Merge with processing info
+            properties["original_metadata"] = settings.original_metadata
+
+        # Write NHDF file
+        with h5py.File(str(output_path), 'w') as f:
+            # Create data group structure
+            data_group = f.create_group("data")
+
+            # Create dataset
+            ds = data_group.create_dataset(
+                "0",
+                data=data.astype(np.float32),
+                compression="gzip",
+                compression_opts=4
+            )
+
+            # Store properties as JSON attribute
+            ds.attrs['properties'] = json.dumps(properties)
+
+            # Create index group (for Nion Swift compatibility)
+            index_group = f.create_group("index")
+            index_info = {
+                "type": "display_item",
+                "uuid": str(uuid.uuid4()),
+                "created": datetime.now().isoformat()
+            }
+            index_group.attrs['1'] = json.dumps(index_info)
+
     def _export_metadata(self, snapshot: ProcessingState, output_folder: pathlib.Path,
                          base_name: str, settings: ProcessingExportSettings):
         """Export metadata for a snapshot."""
@@ -702,11 +811,13 @@ class ProcessingExportDialog(QDialog):
     def __init__(self, snapshots: Dict[str, ProcessingState],
                  original_file_path: Optional[pathlib.Path] = None,
                  scale_info: Optional[Tuple[float, str, int, int]] = None,
+                 calibration_info: Optional[Dict] = None,
                  parent=None):
         super().__init__(parent)
         self._snapshots = snapshots
         self._original_file_path = original_file_path
         self._scale_info = scale_info  # (scale_per_pixel, units, width, height)
+        self._calibration_info = calibration_info  # {'dimensional': [...], 'intensity': {...}, 'metadata': {...}}
         self._worker: Optional[ProcessingExportWorker] = None
         self._snapshot_items: List[SnapshotListItem] = []
 
@@ -880,6 +991,23 @@ class ProcessingExportDialog(QDialog):
 
         layout.addWidget(video_group)
 
+        # Scientific format export (NHDF)
+        scientific_group = QGroupBox("Scientific Format Export")
+        scientific_layout = QVBoxLayout(scientific_group)
+
+        self._nhdf_check = QCheckBox("Export as NHDF (Nion HDF5 format)")
+        self._nhdf_check.setChecked(False)
+        self._nhdf_check.setToolTip("Exports processed data in NHDF format with calibrations preserved.\nCan be loaded back into this viewer or Nion Swift.")
+        scientific_layout.addWidget(self._nhdf_check)
+
+        self._preserve_calibrations_check = QCheckBox("Preserve original calibrations")
+        self._preserve_calibrations_check.setChecked(True)
+        self._preserve_calibrations_check.setEnabled(False)
+        self._preserve_calibrations_check.setToolTip("Keep the original scale and unit calibrations from the source file.")
+        scientific_layout.addWidget(self._preserve_calibrations_check)
+
+        layout.addWidget(scientific_group)
+
         # Metadata options
         meta_group = QGroupBox("Metadata Export")
         meta_layout = QVBoxLayout(meta_group)
@@ -933,6 +1061,7 @@ class ProcessingExportDialog(QDialog):
         self._format_group.buttonClicked.connect(self._update_ui_state)
         self._export_images_check.toggled.connect(self._on_export_images_toggled)
         self._video_check.toggled.connect(self._on_video_check_toggled)
+        self._nhdf_check.toggled.connect(self._preserve_calibrations_check.setEnabled)
 
     def _update_ui_state(self):
         """Update UI based on selections."""
@@ -1019,6 +1148,8 @@ class ProcessingExportDialog(QDialog):
             apply_colormap=self._colormap_check.isChecked(),
             colormap_name=self._colormap_combo.currentText(),
             include_scale_bar=self._scale_bar_check.isChecked(),
+            export_nhdf=self._nhdf_check.isChecked(),
+            preserve_calibrations=self._preserve_calibrations_check.isChecked(),
             export_video=self._video_check.isChecked(),
             video_fps=self._fps_spin.value(),
             video_quality=self._quality_spin.value(),
@@ -1028,7 +1159,10 @@ class ProcessingExportDialog(QDialog):
             scale_per_pixel=scale_per_pixel,
             scale_units=scale_units,
             image_width=image_width,
-            image_height=image_height
+            image_height=image_height,
+            dimensional_calibrations=self._calibration_info.get('dimensional') if hasattr(self, '_calibration_info') and self._calibration_info else None,
+            intensity_calibration=self._calibration_info.get('intensity') if hasattr(self, '_calibration_info') and self._calibration_info else None,
+            original_metadata=self._calibration_info.get('metadata') if hasattr(self, '_calibration_info') and self._calibration_info else None
         )
 
     def _on_export(self):
@@ -1097,6 +1231,8 @@ class ProcessingExportDialog(QDialog):
         self._video_check.setEnabled(enabled)
         self._fps_spin.setEnabled(enabled and self._video_check.isChecked())
         self._quality_spin.setEnabled(enabled and self._video_check.isChecked())
+        self._nhdf_check.setEnabled(enabled)
+        self._preserve_calibrations_check.setEnabled(enabled and self._nhdf_check.isChecked())
         self._json_check.setEnabled(enabled)
         self._txt_check.setEnabled(enabled)
         self._params_check.setEnabled(enabled)

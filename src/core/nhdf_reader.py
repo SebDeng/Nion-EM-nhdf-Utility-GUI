@@ -678,3 +678,81 @@ def is_supported_file(path: pathlib.Path) -> bool:
 def get_supported_extensions() -> List[str]:
     """Get list of supported file extensions."""
     return ['.nhdf', '.dm3', '.dm4']
+
+
+def create_nhdf_data_from_array(
+    data: np.ndarray,
+    name: str = "Processed Data",
+    dimensional_calibrations: Optional[List[Dict]] = None,
+    intensity_calibration: Optional[Dict] = None,
+    source_file: Optional[pathlib.Path] = None,
+    metadata: Optional[Dict] = None
+) -> NHDFData:
+    """
+    Create an NHDFData object from a numpy array.
+
+    Useful for displaying processed data in the Preview mode without
+    needing to save to a file first.
+
+    Args:
+        data: The numpy array data
+        name: A name for the data item
+        dimensional_calibrations: List of dicts with 'offset', 'scale', 'units' for each dimension
+        intensity_calibration: Dict with 'offset', 'scale', 'units' for intensity
+        source_file: Optional source file path (for display purposes)
+        metadata: Optional additional metadata
+
+    Returns:
+        NHDFData object suitable for display in Preview mode
+    """
+    # Determine data descriptor
+    is_sequence = len(data.shape) == 3
+    datum_dim_count = 2
+    collection_dim_count = 0
+
+    data_descriptor = DataDescriptor(
+        is_sequence=is_sequence,
+        collection_dimension_count=collection_dim_count,
+        datum_dimension_count=datum_dim_count
+    )
+
+    # Build dimensional calibrations
+    dim_cals = []
+    if dimensional_calibrations:
+        for cal_dict in dimensional_calibrations:
+            dim_cals.append(CalibrationInfo(
+                offset=cal_dict.get('offset', 0.0),
+                scale=cal_dict.get('scale', 1.0),
+                units=cal_dict.get('units', '')
+            ))
+    else:
+        # Default calibrations for each dimension
+        for _ in range(len(data.shape)):
+            dim_cals.append(CalibrationInfo())
+
+    # Build intensity calibration
+    if intensity_calibration:
+        int_cal = CalibrationInfo(
+            offset=intensity_calibration.get('offset', 0.0),
+            scale=intensity_calibration.get('scale', 1.0),
+            units=intensity_calibration.get('units', '')
+        )
+    else:
+        int_cal = CalibrationInfo()
+
+    # Create a virtual file path for display
+    if source_file:
+        virtual_path = pathlib.Path(str(source_file).replace('.nhdf', f'_{name}.nhdf'))
+    else:
+        virtual_path = pathlib.Path(f"/virtual/{name}.nhdf")
+
+    return NHDFData(
+        file_path=virtual_path,
+        data=data,
+        data_descriptor=data_descriptor,
+        intensity_calibration=int_cal,
+        dimensional_calibrations=dim_cals,
+        metadata=metadata or {},
+        timestamp=datetime.now(),
+        raw_properties={'title': name, 'is_processed': True}
+    )

@@ -68,6 +68,10 @@ class ModeManager(QObject):
         if hasattr(self._processing_widget, 'file_loaded'):
             self._processing_widget.file_loaded.connect(self._on_processing_file_loaded)
 
+        # Connect send to preview signal
+        if hasattr(self._processing_widget, 'send_to_preview_requested'):
+            self._processing_widget.send_to_preview_requested.connect(self._on_send_to_preview)
+
     def _on_tab_changed(self, index: int):
         """Handle tab change."""
         if index == 0:
@@ -90,6 +94,10 @@ class ModeManager(QObject):
         self.current_file = file_path
         self.current_data = data
         self.file_loaded.emit(file_path, data)
+
+    def _on_send_to_preview(self, file_path: str, data: 'NHDFData'):
+        """Handle send to preview request from processing mode."""
+        self.switch_to_preview(file_path, data)
 
     def get_widget(self) -> QTabWidget:
         """Get the tab widget for embedding in main window."""
@@ -120,8 +128,17 @@ class ModeManager(QObject):
         # Switch to processing tab
         self.tab_widget.setCurrentIndex(1)
 
-    def switch_to_preview(self):
-        """Switch back to preview mode."""
+    def switch_to_preview(self, file_path: str = None, data: 'NHDFData' = None):
+        """Switch to preview mode with optional data to load."""
+        if file_path and data:
+            self.current_file = file_path
+            self.current_data = data
+
+            # Load in preview widget
+            if self._preview_widget and hasattr(self._preview_widget, 'load_processed_data'):
+                self._preview_widget.load_processed_data(file_path, data)
+
+        # Switch to preview tab
         self.tab_widget.setCurrentIndex(0)
 
     def get_current_mode(self) -> str:

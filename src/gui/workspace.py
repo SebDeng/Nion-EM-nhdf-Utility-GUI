@@ -818,3 +818,62 @@ class WorkspaceWidget(QWidget):
         if layout_data.get('version') == 1:
             self.from_dict(layout_data.get('layout', {}))
             self.layout_changed.emit()
+
+    def load_processed_data(self, file_path: str, data):
+        """
+        Load processed data directly into the selected panel.
+
+        This is used when sending processed data from Processing Mode to Preview Mode
+        without needing to save to a file first.
+
+        Args:
+            file_path: Virtual file path for display purposes
+            data: NHDFData object to display
+        """
+        # Get the currently selected panel
+        panel = self.selected_panel
+        if not panel:
+            # If no panel selected, use the first one
+            if self.panels:
+                panel = self.panels[0]
+                self._select_panel(panel)
+            else:
+                return
+
+        # Convert to WorkspaceDisplayPanel if needed
+        from src.gui.workspace_display_panel import WorkspaceDisplayPanel
+        if not isinstance(panel, WorkspaceDisplayPanel):
+            # Create new display panel
+            new_panel = WorkspaceDisplayPanel(panel.panel_id)
+            new_panel.close_requested.connect(self._handle_panel_close)
+            new_panel.split_requested.connect(self._handle_panel_split)
+            new_panel.file_dropped.connect(self._handle_file_dropped)
+            new_panel.set_theme(self._is_dark_theme)
+
+            # Get parent and replace
+            parent = panel.parent()
+            from PySide6.QtWidgets import QSplitter
+            if isinstance(parent, QSplitter):
+                index = parent.indexOf(panel)
+                panel.setParent(None)
+                parent.insertWidget(index, new_panel)
+            elif hasattr(self, 'layout'):
+                self.layout.removeWidget(panel)
+                self.layout.addWidget(new_panel)
+
+            # Update references
+            if panel in self.panels:
+                idx = self.panels.index(panel)
+                self.panels[idx] = new_panel
+                if self.selected_panel == panel:
+                    self.selected_panel = new_panel
+
+            panel.deleteLater()
+            panel = new_panel
+
+        # Load the data into the panel
+        panel.set_data(data, file_path)
+        self._select_panel(panel)
+
+        # Emit the file_loaded signal so the main window can update
+        self.file_dropped_on_panel.emit(panel, file_path)
