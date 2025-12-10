@@ -14,7 +14,8 @@ from PySide6.QtGui import QAction, QKeySequence, QPixmap
 
 import pathlib
 import json
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Set
+import warnings
 
 from src.core.nhdf_reader import NHDFData, read_em_file, is_supported_file
 from src.gui.file_browser import FileBrowserPanel
@@ -27,6 +28,7 @@ from src.gui.view_mode_toolbar import ViewModeToolBar
 from src.gui.mode_manager import ModeManager
 from src.gui.preview_mode import AnalysisToolBar
 from src.gui.preview_mode.analysis_panel import AnalysisResultsPanel
+from src.gui.measurement_toolbar import MeasurementToolBar
 
 
 class WorkspaceMainWindow(QMainWindow):
@@ -43,6 +45,7 @@ class WorkspaceMainWindow(QMainWindow):
         self._workspace_layouts: List[Dict] = []  # Saved layouts
         self._is_dark_mode = True  # Track current theme
         self._current_display_panel = None  # Track active display panel for reference
+        self._measurement_connected_panels: Set[int] = set()  # Track panels with measurement signal connected
 
         self._setup_ui()
         self._setup_menus()
@@ -62,11 +65,26 @@ class WorkspaceMainWindow(QMainWindow):
         central_layout.setContentsMargins(0, 0, 0, 0)
         central_layout.setSpacing(0)
 
-        # Add view mode toolbar at the top
+        # Top toolbar row - contains view mode toolbar (left) and measurement toolbar (right)
+        top_toolbar_widget = QWidget()
+        top_toolbar_layout = QHBoxLayout(top_toolbar_widget)
+        top_toolbar_layout.setContentsMargins(0, 0, 0, 0)
+        top_toolbar_layout.setSpacing(0)
+
+        # Add view mode toolbar at the top left
         self._view_toolbar = ViewModeToolBar()
         self._view_toolbar.layout_selected.connect(self._on_view_mode_selected)
         self._view_toolbar.theme_changed.connect(self._on_theme_changed)
-        central_layout.addWidget(self._view_toolbar)
+        top_toolbar_layout.addWidget(self._view_toolbar)
+
+        # Add measurement toolbar at the top right
+        self._measurement_toolbar = MeasurementToolBar()
+        self._measurement_toolbar.create_measurement.connect(self._on_create_measurement)
+        self._measurement_toolbar.clear_all.connect(self._on_clear_measurements)
+        self._measurement_toolbar.clear_last.connect(self._on_clear_last_measurement)
+        top_toolbar_layout.addWidget(self._measurement_toolbar, 1)  # Give stretch factor to fill space
+
+        central_layout.addWidget(top_toolbar_widget)
 
         # Add unified control panel below the view toolbar
         self._unified_controls = UnifiedControlPanel()
@@ -607,6 +625,10 @@ class WorkspaceMainWindow(QMainWindow):
         if hasattr(self, '_analysis_toolbar'):
             self._analysis_toolbar.set_theme(is_dark)
 
+        # Update measurement toolbar theme
+        if hasattr(self, '_measurement_toolbar'):
+            self._measurement_toolbar.set_theme(is_dark)
+
         # Update analysis panel theme
         if hasattr(self, '_analysis_panel'):
             self._analysis_panel.set_theme(is_dark)
@@ -881,6 +903,48 @@ class WorkspaceMainWindow(QMainWindow):
             if isinstance(panel, WorkspaceDisplayPanel):
                 self._update_histogram_for_panel(panel)
 
+    def _on_create_measurement(self):
+        """Handle create measurement button click."""
+        # Get the selected panel and create a measurement on it
+        if self._workspace and self._workspace.selected_panel:
+            panel = self._workspace.selected_panel
+            if isinstance(panel, WorkspaceDisplayPanel):
+                if hasattr(panel, 'display_panel') and panel.display_panel:
+                    display = panel.display_panel
+                    display.create_measurement()
+                    # Connect measurement signal to update toolbar (only if not already connected)
+                    if hasattr(display, '_measurement_overlay') and display._measurement_overlay:
+                        overlay_id = id(display._measurement_overlay)
+                        if overlay_id not in self._measurement_connected_panels:
+                            display._measurement_overlay.measurement_created.connect(self._on_measurement_updated)
+                            self._measurement_connected_panels.add(overlay_id)
+
+    def _on_clear_measurements(self):
+        """Handle clear all measurements button click."""
+        if self._workspace:
+            for panel in self._workspace.panels:
+                if isinstance(panel, WorkspaceDisplayPanel):
+                    if hasattr(panel, 'display_panel') and panel.display_panel:
+                        panel.display_panel.clear_measurements()
+        self._measurement_toolbar.clear_distance()
+
+    def _on_clear_last_measurement(self):
+        """Handle clear last measurement button click."""
+        if self._workspace and self._workspace.selected_panel:
+            panel = self._workspace.selected_panel
+            if isinstance(panel, WorkspaceDisplayPanel):
+                if hasattr(panel, 'display_panel') and panel.display_panel:
+                    panel.display_panel.clear_last_measurement()
+
+    def _on_measurement_updated(self, measurement_data):
+        """Handle measurement data updates from display panels."""
+        from src.gui.measurement_overlay import MeasurementData
+        if isinstance(measurement_data, MeasurementData):
+            self._measurement_toolbar.update_distance(
+                measurement_data.distance_px,
+                measurement_data.distance_nm
+            )
+
     def _on_clear_analysis(self):
         """Handle clear analysis request."""
         # Clear analysis panel
@@ -1137,6 +1201,8 @@ class WorkspaceMainWindow(QMainWindow):
             self._statusbar.showMessage(data.get_summary())
             # Update histogram when data is loaded
             self._update_histogram_for_panel(panel)
+            # Re-sync unified controls to update subscan checkbox state
+            self._update_unified_controls(panel)
 
         self._update_export_actions()
 

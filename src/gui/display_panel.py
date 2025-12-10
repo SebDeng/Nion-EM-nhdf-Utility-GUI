@@ -19,6 +19,7 @@ from matplotlib import colormaps as mpl_colormaps
 
 from src.core.nhdf_reader import NHDFData
 from src.gui.line_profile_overlay import LineProfileOverlay, LineProfileData
+from src.gui.measurement_overlay import MeasurementOverlay, MeasurementData
 
 
 class ScaleBarItem(pg.GraphicsObject):
@@ -291,6 +292,57 @@ class SubscanAreaOverlay(pg.GraphicsObject):
         painter.drawLine(pg.QtCore.QPointF(rect_x + subscan_width, rect_y + subscan_height),
                         pg.QtCore.QPointF(rect_x + subscan_width, rect_y + subscan_height - corner_size))
 
+        # Draw center point markers
+        # Image center (cyan crosshair)
+        image_center_x = self._image_width / 2
+        image_center_y = self._image_height / 2
+        crosshair_size = min(subscan_width, subscan_height) * 0.06
+
+        # Subscan center is same as image center for centered subscans
+        subscan_center_x = center_x
+        subscan_center_y = center_y
+
+        # Draw image center crosshair (cyan)
+        cyan_color = pg.mkColor(0, 255, 255, 220)
+        painter.setPen(pg.mkPen(cyan_color, width=2))
+        painter.setBrush(pg.QtCore.Qt.NoBrush)
+
+        # Horizontal line
+        painter.drawLine(pg.QtCore.QPointF(image_center_x - crosshair_size, image_center_y),
+                        pg.QtCore.QPointF(image_center_x + crosshair_size, image_center_y))
+        # Vertical line
+        painter.drawLine(pg.QtCore.QPointF(image_center_x, image_center_y - crosshair_size),
+                        pg.QtCore.QPointF(image_center_x, image_center_y + crosshair_size))
+        # Small circle at center
+        painter.drawEllipse(pg.QtCore.QPointF(image_center_x, image_center_y),
+                           crosshair_size * 0.3, crosshair_size * 0.3)
+
+        # Draw small markers at snap points (corners and edge midpoints)
+        snap_marker_size = min(subscan_width, subscan_height) * 0.015  # Smaller markers
+        snap_color = pg.mkColor(255, 200, 0, 180)  # Orange-yellow
+        painter.setPen(pg.mkPen(snap_color, width=1))
+        painter.setBrush(pg.mkBrush(snap_color))
+
+        # Corner snap points (small filled circles)
+        corners = [
+            (rect_x, rect_y),  # Top-left
+            (rect_x + subscan_width, rect_y),  # Top-right
+            (rect_x, rect_y + subscan_height),  # Bottom-left
+            (rect_x + subscan_width, rect_y + subscan_height),  # Bottom-right
+        ]
+        for cx, cy in corners:
+            painter.drawEllipse(pg.QtCore.QPointF(cx, cy), snap_marker_size, snap_marker_size)
+
+        # Edge midpoint snap points (small filled circles)
+        edge_midpoints = [
+            (rect_x + subscan_width / 2, rect_y),  # Top
+            (rect_x + subscan_width / 2, rect_y + subscan_height),  # Bottom
+            (rect_x, rect_y + subscan_height / 2),  # Left
+            (rect_x + subscan_width, rect_y + subscan_height / 2),  # Right
+        ]
+        for mx, my in edge_midpoints:
+            painter.drawEllipse(pg.QtCore.QPointF(mx, my), snap_marker_size, snap_marker_size)
+
         # Draw label "Subscan Area" at the top edge of the rectangle
         font = painter.font()
         # Font size proportional to subscan area, not full image
@@ -334,6 +386,41 @@ class SubscanAreaOverlay(pg.GraphicsObject):
     def is_available(self) -> bool:
         """Check if this overlay is available (i.e., the image is a context scan)."""
         return self._is_context_scan
+
+    def get_snap_points(self) -> list:
+        """
+        Get all snap points for magnetic snapping.
+        Returns a list of (x, y) tuples for: 4 corners, 4 edge midpoints, and center.
+        """
+        if not self._visible or not self._is_context_scan:
+            return []
+
+        # Calculate subscan rectangle geometry
+        subscan_width = self._image_width * self._subscan_ratio
+        subscan_height = self._image_height * self._subscan_ratio
+        center_x = self._image_width / 2
+        center_y = self._image_height / 2
+        rect_x = center_x - subscan_width / 2
+        rect_y = center_y - subscan_height / 2
+
+        snap_points = []
+
+        # 4 corners
+        snap_points.append((rect_x, rect_y))  # Top-left
+        snap_points.append((rect_x + subscan_width, rect_y))  # Top-right
+        snap_points.append((rect_x, rect_y + subscan_height))  # Bottom-left
+        snap_points.append((rect_x + subscan_width, rect_y + subscan_height))  # Bottom-right
+
+        # 4 edge midpoints
+        snap_points.append((rect_x + subscan_width / 2, rect_y))  # Top
+        snap_points.append((rect_x + subscan_width / 2, rect_y + subscan_height))  # Bottom
+        snap_points.append((rect_x, rect_y + subscan_height / 2))  # Left
+        snap_points.append((rect_x + subscan_width, rect_y + subscan_height / 2))  # Right
+
+        # Center point (image center = subscan center for centered subscans)
+        snap_points.append((center_x, center_y))
+
+        return snap_points
 
 
 def get_colormap(name: str) -> pg.ColorMap:
@@ -556,6 +643,7 @@ class DisplayPanel(QWidget):
 
     frame_changed = Signal(int)
     line_profile_created = Signal(LineProfileData)  # Emitted when a line profile is created
+    measurement_created = Signal(MeasurementData)  # Emitted when a measurement is created/updated
 
     def __init__(self, parent=None, show_controls=True):
         super().__init__(parent)
@@ -563,6 +651,7 @@ class DisplayPanel(QWidget):
         self._current_frame = 0
         self._show_controls = show_controls
         self._line_profile_overlay: Optional[LineProfileOverlay] = None
+        self._measurement_overlay: Optional[MeasurementOverlay] = None
 
         self._setup_ui()
 
@@ -598,6 +687,10 @@ class DisplayPanel(QWidget):
         # Line profile overlay
         self._line_profile_overlay = LineProfileOverlay(self._plot_item, self._image_item)
         self._line_profile_overlay.profile_created.connect(self.line_profile_created.emit)
+
+        # Measurement overlay
+        self._measurement_overlay = MeasurementOverlay(self._plot_item, self._image_item)
+        self._measurement_overlay.measurement_created.connect(self.measurement_created.emit)
 
         # Color bar
         self._colorbar = pg.ColorBarItem(
@@ -931,6 +1024,14 @@ class DisplayPanel(QWidget):
         """Set the visibility of the subscan overlay."""
         if self._subscan_overlay.is_available():
             self._subscan_overlay.setVisible(visible)
+            # Update snap points for measurement overlay
+            self._update_measurement_snap_points()
+
+    def _update_measurement_snap_points(self):
+        """Update snap points for the measurement overlay based on subscan overlay."""
+        if self._measurement_overlay:
+            snap_points = self._subscan_overlay.get_snap_points()
+            self._measurement_overlay.set_snap_points(snap_points)
 
     def clear(self):
         """Clear the display."""
@@ -997,3 +1098,35 @@ class DisplayPanel(QWidget):
         """Clear all analysis overlays."""
         if self._line_profile_overlay:
             self._line_profile_overlay.clear_all()
+        if self._measurement_overlay:
+            self._measurement_overlay.clear_all()
+
+    def create_measurement(self):
+        """Create a new distance measurement line."""
+        if self._measurement_overlay:
+            # Set calibration if available
+            if self._data and self._data.dimensional_calibrations:
+                spatial_cals = self._data.dimensional_calibrations
+                if self._data.data_descriptor.is_sequence and len(spatial_cals) > 1:
+                    spatial_cals = spatial_cals[1:]
+                if spatial_cals:
+                    self._measurement_overlay.set_calibration(spatial_cals[0])
+            # Update snap points before creating measurement
+            self._update_measurement_snap_points()
+            self._measurement_overlay.create_measurement_line()
+
+    def confirm_measurement(self):
+        """Confirm the current measurement and make it permanent."""
+        if self._measurement_overlay:
+            return self._measurement_overlay.confirm_measurement()
+        return None
+
+    def clear_measurements(self):
+        """Clear all measurements."""
+        if self._measurement_overlay:
+            self._measurement_overlay.clear_all()
+
+    def clear_last_measurement(self):
+        """Clear the last measurement."""
+        if self._measurement_overlay:
+            self._measurement_overlay.clear_last()
