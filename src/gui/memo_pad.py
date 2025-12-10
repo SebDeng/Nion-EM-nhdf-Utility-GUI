@@ -94,8 +94,9 @@ class MemoPad(QFrame):
         layout.addWidget(self._title_bar)
 
         # Content area
-        content_widget = QWidget()
-        content_layout = QVBoxLayout(content_widget)
+        self._content_widget = QWidget()
+        self._content_widget.setObjectName("MemoContent")
+        content_layout = QVBoxLayout(self._content_widget)
         content_layout.setContentsMargins(4, 4, 4, 4)
 
         # Text edit
@@ -106,8 +107,9 @@ class MemoPad(QFrame):
         content_layout.addWidget(self._text_edit)
 
         # Bottom bar with resize grip
-        bottom_bar = QWidget()
-        bottom_layout = QHBoxLayout(bottom_bar)
+        self._bottom_bar = QWidget()
+        self._bottom_bar.setObjectName("MemoBottomBar")
+        bottom_layout = QHBoxLayout(self._bottom_bar)
         bottom_layout.setContentsMargins(4, 0, 0, 0)
         bottom_layout.setSpacing(0)
 
@@ -118,9 +120,9 @@ class MemoPad(QFrame):
         self._size_grip.setFixedSize(16, 16)
         bottom_layout.addWidget(self._size_grip)
 
-        content_layout.addWidget(bottom_bar)
+        content_layout.addWidget(self._bottom_bar)
 
-        layout.addWidget(content_widget)
+        layout.addWidget(self._content_widget)
 
         # Install event filter for dragging
         self._title_bar.installEventFilter(self)
@@ -129,19 +131,21 @@ class MemoPad(QFrame):
         """Apply the semi-transparent sticky note style."""
         colors = self.COLORS[self._color_index]
 
-        # Adjust colors for dark theme
-        if self._is_dark_theme:
-            text_color = '#1a1a1a'
-            placeholder_color = '#555555'
-        else:
-            text_color = '#1a1a1a'
-            placeholder_color = '#777777'
+        # Text is always dark on the light-colored sticky note
+        text_color = '#1a1a1a'
+        placeholder_color = '#666666'
 
         self.setStyleSheet(f"""
             MemoPad {{
                 background-color: {colors['bg']};
                 border: 2px solid {colors['border']};
                 border-radius: 6px;
+            }}
+            QWidget#MemoContent {{
+                background-color: transparent;
+            }}
+            QWidget#MemoBottomBar {{
+                background-color: transparent;
             }}
         """)
 
@@ -178,10 +182,9 @@ class MemoPad(QFrame):
                 border: none;
                 color: {text_color};
             }}
-            QTextEdit::placeholder {{
-                color: {placeholder_color};
-            }}
         """)
+        # Make the viewport transparent too
+        self._text_edit.viewport().setStyleSheet("background-color: transparent;")
 
     def set_theme(self, is_dark: bool):
         """Update theme."""
