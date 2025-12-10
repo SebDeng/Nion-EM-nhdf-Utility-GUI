@@ -12,6 +12,53 @@ from typing import Optional, Tuple, List
 from dataclasses import dataclass
 
 
+class LargeHandlePolyLineROI(pg.PolyLineROI):
+    """
+    Custom PolyLineROI with larger handles for easier selection.
+    Automatically resizes all handles including newly added ones.
+    """
+
+    HANDLE_RADIUS = 10  # Larger than default ~5
+
+    def __init__(self, positions, closed=False, pos=None, **args):
+        super().__init__(positions, closed=closed, pos=pos, **args)
+        self._handle_color = QColor('lime')  # Default, will be set later
+        # Resize initial handles
+        self._resize_all_handles()
+
+    def set_handle_color(self, color: QColor):
+        """Set the color for handles."""
+        self._handle_color = color
+        self._resize_all_handles()
+
+    def _resize_all_handles(self):
+        """Resize all handles to the larger size."""
+        for handle in self.getHandles():
+            handle.radius = self.HANDLE_RADIUS
+            handle.pen = pg.mkPen(self._handle_color, width=2)
+            handle.brush = pg.mkBrush(self._handle_color)
+            handle.buildPath()
+            handle.update()
+
+    def addHandle(self, info, index=None):
+        """Override to ensure new handles are also large."""
+        handle = super().addHandle(info, index)
+        # Resize the newly added handle
+        if handle:
+            handle.radius = self.HANDLE_RADIUS
+            handle.pen = pg.mkPen(self._handle_color, width=2)
+            handle.brush = pg.mkBrush(self._handle_color)
+            handle.buildPath()
+            handle.update()
+        return handle
+
+    def segmentClicked(self, segment, ev=None, pos=None):
+        """Override to resize handle after segment click adds new vertex."""
+        super().segmentClicked(segment, ev, pos)
+        # Resize all handles after a new one is added
+        self._resize_all_handles()
+
+
 class SnapIndicator(pg.GraphicsObject):
     """
     Visual indicator showing when a handle is near a snap point.
@@ -1285,8 +1332,8 @@ class MeasurementOverlay(QObject):
         self.polygon_id_counter += 1
         self.measurement_id_counter += 1  # Use same counter for ordering
 
-        # Create closed PolyLineROI
-        polygon_roi = pg.PolyLineROI(
+        # Create closed PolyLineROI with large handles
+        polygon_roi = LargeHandlePolyLineROI(
             vertices,
             closed=True,
             pen=pg.mkPen(color=qt_color, width=2),
@@ -1295,17 +1342,10 @@ class MeasurementOverlay(QObject):
             handleHoverPen=pg.mkPen(color='white', width=3),
         )
 
-        # Store metadata
+        # Set handle color and store metadata
+        polygon_roi.set_handle_color(qt_color)
         polygon_roi._polygon_color = color
         polygon_roi._polygon_id = self.measurement_id_counter
-
-        # Make handles larger and more visible
-        for handle in polygon_roi.getHandles():
-            handle.radius = 10  # Increase from default ~5 to 10
-            handle.pen = pg.mkPen(qt_color, width=2)
-            handle.brush = pg.mkBrush(qt_color)
-            handle.buildPath()  # Rebuild handle path with new radius
-            handle.update()
 
         # Add to plot
         self.plot_item.addItem(polygon_roi)
