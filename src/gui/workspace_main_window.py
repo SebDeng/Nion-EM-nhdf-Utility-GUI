@@ -1762,8 +1762,8 @@ class WorkspaceMainWindow(QMainWindow):
 
         # Get measurements from current panel
         measurements = []
-        if self._current_display_panel and hasattr(self._current_display_panel.display_panel, '_measurement_overlay'):
-            overlay = self._current_display_panel.display_panel._measurement_overlay
+        if self._current_display_panel and hasattr(self._current_display_panel, '_measurement_overlay'):
+            overlay = self._current_display_panel._measurement_overlay
             if overlay:
                 # Serialize line measurements
                 for line_roi in overlay.active_line_rois:
