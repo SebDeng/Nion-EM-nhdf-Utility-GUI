@@ -366,6 +366,227 @@ class MeasurementData:
     calibration: Optional[float] = None  # nm per pixel
 
 
+@dataclass
+class PolygonAreaData:
+    """Data structure for polygon area measurement results."""
+    vertices: List[Tuple[float, float]]  # List of (x, y) vertex coordinates
+    area_px: float  # Area in square pixels
+    area_nm2: Optional[float]  # Area in nm² (if calibration available)
+    perimeter_px: float  # Perimeter in pixels
+    perimeter_nm: Optional[float]  # Perimeter in nm
+    centroid: Tuple[float, float]  # Center of the polygon
+    measurement_id: str = ""
+    calibration: Optional[float] = None  # nm per pixel
+
+
+class DraggableAreaLabel(pg.GraphicsObject):
+    """
+    A draggable label that displays area for a polygon measurement.
+    Similar to DraggableDistanceLabel but for area values.
+    """
+
+    DEFAULT_FONT_SIZE = 12
+
+    def __init__(self, color: str = 'lime', parent=None):
+        super().__init__(parent)
+        self._color = color
+        self._text = "--"
+        self._label_pos = QPointF(0, 0)
+        self._anchor_pos = QPointF(0, 0)  # Polygon centroid
+        self._is_dragging = False
+        self._drag_offset = QPointF(0, 0)
+        self._user_offset = QPointF(0, 0)
+        self._visible = True
+        self._font_size = self.DEFAULT_FONT_SIZE
+        self._font = QFont("Arial", self._font_size, QFont.Bold)
+        self._padding = 6
+        self._show_connector = True
+
+        self.setFlag(QGraphicsItem.ItemIsMovable, False)
+        self.setAcceptHoverEvents(True)
+        self.setAcceptedMouseButtons(Qt.LeftButton)
+        self.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+
+    def set_text(self, text: str):
+        """Set the area text to display."""
+        self._text = text
+        self.update()
+
+    def set_color(self, color: str):
+        """Set the label color."""
+        self._color = color
+        self.update()
+
+    def set_anchor_position(self, x: float, y: float):
+        """Set the anchor position (polygon centroid)."""
+        self._anchor_pos = QPointF(x, y)
+        self._label_pos = self._anchor_pos + self._user_offset
+        self.setPos(self._anchor_pos)
+        self.prepareGeometryChange()
+        self.update()
+
+    def reset_position(self):
+        """Reset label to default position."""
+        self._user_offset = QPointF(40, -40)
+        self._label_pos = self._anchor_pos + self._user_offset
+        self.prepareGeometryChange()
+        self.update()
+
+    def set_visible(self, visible: bool):
+        """Set label visibility."""
+        self._visible = visible
+        self.update()
+
+    def is_visible(self) -> bool:
+        """Check if label is visible."""
+        return self._visible
+
+    def set_font_size(self, size: int):
+        """Set the font size for the label."""
+        self._font_size = max(8, min(32, size))
+        self._font = QFont("Arial", self._font_size, QFont.Bold)
+        self.prepareGeometryChange()
+        self.update()
+
+    def get_font_size(self) -> int:
+        """Get the current font size."""
+        return self._font_size
+
+    def boundingRect(self):
+        """Return bounding rectangle."""
+        if not self._visible:
+            return pg.QtCore.QRectF(0, 0, 0, 0)
+
+        fm = pg.QtGui.QFontMetrics(self._font)
+        text_rect = fm.boundingRect(self._text)
+        text_width = text_rect.width() + self._padding * 2
+        text_height = text_rect.height() + self._padding * 2
+
+        offset_x = self._user_offset.x()
+        offset_y = self._user_offset.y()
+
+        label_left = offset_x - text_width / 2
+        label_top = offset_y - text_height / 2
+
+        min_x = min(label_left, 0) - 10
+        min_y = min(label_top, 0) - 10
+        max_x = max(label_left + text_width, 0) + 10
+        max_y = max(label_top + text_height, 0) + 10
+
+        return pg.QtCore.QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
+
+    def paint(self, painter, option, widget):
+        """Paint the label and connector line."""
+        if not self._visible:
+            return
+
+        color = QColor(self._color)
+        painter.setFont(self._font)
+
+        fm = painter.fontMetrics()
+        text_rect = fm.boundingRect(self._text)
+        text_width = text_rect.width() + self._padding * 2
+        text_height = text_rect.height() + self._padding * 2
+
+        label_x = self._user_offset.x()
+        label_y = self._user_offset.y()
+
+        # Draw connector line
+        if self._show_connector:
+            offset_dist = (self._user_offset.x()**2 + self._user_offset.y()**2)**0.5
+            if offset_dist > 15:
+                connector_pen = QPen(color)
+                connector_pen.setWidth(1)
+                connector_pen.setStyle(Qt.DashLine)
+                painter.setPen(connector_pen)
+                painter.drawLine(0, 0, int(label_x), int(label_y))
+
+                painter.setBrush(pg.mkBrush(color))
+                painter.setPen(Qt.NoPen)
+                painter.drawEllipse(-3, -3, 6, 6)
+
+        # Draw label background
+        bg_rect = pg.QtCore.QRectF(
+            label_x - text_width / 2,
+            label_y - text_height / 2,
+            text_width,
+            text_height
+        )
+
+        bg_color = QColor(0, 0, 0, 200)
+        painter.setBrush(pg.mkBrush(bg_color))
+        border_pen = QPen(color)
+        border_pen.setWidth(2)
+        painter.setPen(border_pen)
+        painter.drawRoundedRect(bg_rect, 4, 4)
+
+        # Draw text
+        painter.setPen(QPen(color))
+        painter.drawText(
+            int(label_x - text_rect.width() / 2),
+            int(label_y + text_rect.height() / 4),
+            self._text
+        )
+
+        # Draw drag handle indicator when hovered
+        if self._is_dragging or self.isUnderMouse():
+            handle_size = 8
+            handle_x = label_x + text_width / 2 - handle_size - 2
+            handle_y = label_y + text_height / 2 - handle_size - 2
+
+            path = QPainterPath()
+            path.moveTo(handle_x + handle_size, handle_y)
+            path.lineTo(handle_x + handle_size, handle_y + handle_size)
+            path.lineTo(handle_x, handle_y + handle_size)
+            path.closeSubpath()
+
+            painter.setBrush(pg.mkBrush(color))
+            painter.setPen(Qt.NoPen)
+            painter.drawPath(path)
+
+    def hoverEnterEvent(self, event):
+        self.setCursor(Qt.OpenHandCursor)
+        self.update()
+
+    def hoverLeaveEvent(self, event):
+        self.setCursor(Qt.ArrowCursor)
+        self.update()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._is_dragging = True
+            self._drag_offset = event.pos() - QPointF(self._user_offset.x(), self._user_offset.y())
+            self.setCursor(Qt.ClosedHandCursor)
+            event.accept()
+        else:
+            event.ignore()
+
+    def mouseMoveEvent(self, event):
+        if self._is_dragging:
+            new_offset = event.pos() - self._drag_offset
+            self._user_offset = QPointF(new_offset.x(), new_offset.y())
+            self.prepareGeometryChange()
+            self.update()
+            event.accept()
+        else:
+            event.ignore()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and self._is_dragging:
+            self._is_dragging = False
+            self.setCursor(Qt.OpenHandCursor)
+            event.accept()
+        else:
+            event.ignore()
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.reset_position()
+            event.accept()
+        else:
+            event.ignore()
+
+
 class MeasurementLine(pg.GraphicsObject):
     """
     A single measurement line with distance label.
@@ -486,13 +707,14 @@ class MeasurementLine(pg.GraphicsObject):
 class MeasurementOverlay(QObject):
     """
     Manages measurement tools on image displays.
-    Allows creating multiple distance measurement lines.
+    Allows creating multiple distance measurement lines and polygon area measurements.
     """
 
     # Signals
     measurement_created = Signal(MeasurementData)  # Emitted when a measurement is created
     measurement_updated = Signal(MeasurementData)  # Emitted when measurement is updated
     measurements_cleared = Signal()  # Emitted when all measurements are cleared
+    polygon_area_created = Signal(PolygonAreaData)  # Emitted when polygon area is measured
 
     def __init__(self, plot_item: pg.PlotItem, image_item: pg.ImageItem):
         super().__init__()
@@ -507,6 +729,11 @@ class MeasurementOverlay(QObject):
 
         # Dictionary mapping line ROI to its draggable label
         self._line_labels: dict = {}  # {line_roi: DraggableDistanceLabel}
+
+        # Polygon area measurements
+        self.active_polygon_rois: List[pg.PolyLineROI] = []
+        self.polygon_id_counter = 0
+        self._polygon_labels: dict = {}  # {polygon_roi: DraggableAreaLabel}
 
         # Whether to show floating labels (can be toggled)
         self._show_labels = True
@@ -817,18 +1044,26 @@ class MeasurementOverlay(QObject):
         return nearest
 
     def clear_active(self):
-        """Clear all active (uncommitted) measurement lines."""
+        """Clear all active (uncommitted) measurement lines and polygons."""
+        # Clear lines
         for line_roi in self.active_line_rois:
-            # Remove associated label
             if line_roi in self._line_labels:
                 label = self._line_labels.pop(line_roi)
                 self.plot_item.removeItem(label)
             self.plot_item.removeItem(line_roi)
         self.active_line_rois.clear()
 
+        # Clear polygons
+        for polygon_roi in self.active_polygon_rois:
+            if polygon_roi in self._polygon_labels:
+                label = self._polygon_labels.pop(polygon_roi)
+                self.plot_item.removeItem(label)
+            self.plot_item.removeItem(polygon_roi)
+        self.active_polygon_rois.clear()
+
     def clear_all(self):
         """Clear all measurements (active and completed)."""
-        # Clear all active lines (and their labels)
+        # Clear all active lines and polygons (and their labels)
         self.clear_active()
 
         # Clear completed measurements
@@ -838,23 +1073,34 @@ class MeasurementOverlay(QObject):
 
         # Reset counters
         self.measurement_id_counter = 0
+        self.polygon_id_counter = 0
         self.color_index = 0
 
         self.measurements_cleared.emit()
 
     def clear_last(self):
-        """Remove the last measurement (active ROI first, then completed)."""
-        # First remove from active ROIs if any exist
-        if self.active_line_rois:
+        """Remove the last measurement (line or polygon)."""
+        # Determine which was added last by comparing IDs
+        last_line_id = self.active_line_rois[-1]._measurement_id if self.active_line_rois else -1
+        last_poly_id = self.active_polygon_rois[-1]._polygon_id if self.active_polygon_rois else -1
+
+        # Remove the most recent one
+        if last_poly_id > last_line_id and self.active_polygon_rois:
+            last_roi = self.active_polygon_rois.pop()
+            if last_roi in self._polygon_labels:
+                label = self._polygon_labels.pop(last_roi)
+                self.plot_item.removeItem(label)
+            self.plot_item.removeItem(last_roi)
+            if self.color_index > 0:
+                self.color_index -= 1
+        elif self.active_line_rois:
             last_roi = self.active_line_rois.pop()
-            # Remove associated label
             if last_roi in self._line_labels:
                 label = self._line_labels.pop(last_roi)
                 self.plot_item.removeItem(label)
             self.plot_item.removeItem(last_roi)
             if self.color_index > 0:
                 self.color_index -= 1
-        # Otherwise remove from completed measurements
         elif self.completed_measurements:
             last_measurement = self.completed_measurements.pop()
             self.plot_item.removeItem(last_measurement)
@@ -897,9 +1143,11 @@ class MeasurementOverlay(QObject):
             self._emit_measurement_data_for_roi(line_roi)
 
     def set_labels_visible(self, visible: bool):
-        """Show or hide all floating distance labels."""
+        """Show or hide all floating labels (distance and area)."""
         self._show_labels = visible
         for label in self._line_labels.values():
+            label.set_visible(visible)
+        for label in self._polygon_labels.values():
             label.set_visible(visible)
 
     def toggle_labels(self) -> bool:
@@ -916,13 +1164,229 @@ class MeasurementOverlay(QObject):
         """Reset all labels to their default positions."""
         for label in self._line_labels.values():
             label.reset_position()
+        for label in self._polygon_labels.values():
+            label.reset_position()
 
     def set_label_font_size(self, size: int):
         """Set font size for all labels (and future labels)."""
         self._label_font_size = size
         for label in self._line_labels.values():
             label.set_font_size(size)
+        for label in self._polygon_labels.values():
+            label.set_font_size(size)
 
     def get_label_font_size(self) -> int:
         """Get the current label font size."""
         return self._label_font_size
+
+    # ==================== Polygon Area Measurement Methods ====================
+
+    def create_polygon_area(self):
+        """Create a new polygon for area measurement."""
+        if self.image_item.image is None:
+            return
+
+        # Get image dimensions
+        img_shape = self.image_item.image.shape
+        height, width = img_shape[0], img_shape[1] if len(img_shape) > 1 else img_shape[0]
+
+        # Calculate initial polygon position (pentagon shape centered in image)
+        center_x = width / 2
+        center_y = height / 2
+        radius = min(width, height) * 0.2  # 20% of smaller dimension
+
+        # Offset for multiple polygons
+        offset = len(self.active_polygon_rois) * 0.05 * min(width, height)
+        center_x += offset
+        center_y += offset
+
+        # Create initial vertices (pentagon)
+        num_vertices = 5
+        vertices = []
+        for i in range(num_vertices):
+            angle = 2 * np.pi * i / num_vertices - np.pi / 2  # Start from top
+            x = center_x + radius * np.cos(angle)
+            y = center_y + radius * np.sin(angle)
+            # Clamp to image bounds
+            x = max(10, min(width - 10, x))
+            y = max(10, min(height - 10, y))
+            vertices.append([x, y])
+
+        # Get color for this polygon
+        color = self.get_next_color()
+        qt_color = QColor(color)
+
+        # Increment counter
+        self.polygon_id_counter += 1
+        self.measurement_id_counter += 1  # Use same counter for ordering
+
+        # Create closed PolyLineROI
+        polygon_roi = pg.PolyLineROI(
+            vertices,
+            closed=True,
+            pen=pg.mkPen(color=qt_color, width=2),
+            hoverPen=pg.mkPen(color='white', width=3),
+            handlePen=pg.mkPen(color=qt_color, width=2),
+            handleHoverPen=pg.mkPen(color='white', width=3),
+        )
+
+        # Store metadata
+        polygon_roi._polygon_color = color
+        polygon_roi._polygon_id = self.measurement_id_counter
+
+        # Make handles more visible
+        for handle in polygon_roi.getHandles():
+            handle.pen = pg.mkPen(qt_color, width=2)
+            handle.brush = pg.mkBrush(qt_color)
+
+        # Add to plot
+        self.plot_item.addItem(polygon_roi)
+        polygon_roi.setZValue(900 + len(self.active_polygon_rois))
+        self.active_polygon_rois.append(polygon_roi)
+
+        # Create draggable area label
+        label = DraggableAreaLabel(color=color)
+        label.set_font_size(self._label_font_size)
+        self.plot_item.addItem(label)
+        label.setZValue(1500 + len(self.active_polygon_rois))
+        label.set_visible(self._show_labels)
+        self._polygon_labels[polygon_roi] = label
+
+        # Calculate initial centroid and set label position
+        centroid = self._calculate_polygon_centroid(vertices)
+        label.set_anchor_position(centroid[0], centroid[1])
+        label.reset_position()
+
+        # Connect to ROI changes
+        polygon_roi.sigRegionChanged.connect(lambda: self._on_polygon_changed(polygon_roi))
+        polygon_roi.sigRegionChangeFinished.connect(lambda: self._on_polygon_change_finished(polygon_roi))
+
+        # Emit initial measurement
+        self._emit_polygon_area_data(polygon_roi)
+
+    def _on_polygon_changed(self, polygon_roi: pg.PolyLineROI):
+        """Handle changes to a polygon ROI."""
+        if polygon_roi in self.active_polygon_rois:
+            self._emit_polygon_area_data(polygon_roi)
+
+    def _on_polygon_change_finished(self, polygon_roi: pg.PolyLineROI):
+        """Handle when polygon ROI change is finished."""
+        if polygon_roi in self.active_polygon_rois:
+            self._emit_polygon_area_data(polygon_roi)
+
+    def _get_polygon_vertices(self, polygon_roi: pg.PolyLineROI) -> List[Tuple[float, float]]:
+        """Get the vertices of a polygon ROI in data coordinates."""
+        vertices = []
+        handles = polygon_roi.getLocalHandlePositions()
+        roi_pos = polygon_roi.pos()
+
+        for _, handle_pos in handles:
+            x = roi_pos.x() + handle_pos.x()
+            y = roi_pos.y() + handle_pos.y()
+            vertices.append((x, y))
+
+        return vertices
+
+    def _calculate_polygon_area(self, vertices: List[Tuple[float, float]]) -> float:
+        """Calculate polygon area using the Shoelace formula."""
+        n = len(vertices)
+        if n < 3:
+            return 0.0
+
+        area = 0.0
+        for i in range(n):
+            j = (i + 1) % n
+            area += vertices[i][0] * vertices[j][1]
+            area -= vertices[j][0] * vertices[i][1]
+
+        return abs(area) / 2.0
+
+    def _calculate_polygon_perimeter(self, vertices: List[Tuple[float, float]]) -> float:
+        """Calculate polygon perimeter."""
+        n = len(vertices)
+        if n < 2:
+            return 0.0
+
+        perimeter = 0.0
+        for i in range(n):
+            j = (i + 1) % n
+            dx = vertices[j][0] - vertices[i][0]
+            dy = vertices[j][1] - vertices[i][1]
+            perimeter += np.sqrt(dx**2 + dy**2)
+
+        return perimeter
+
+    def _calculate_polygon_centroid(self, vertices: List[Tuple[float, float]]) -> Tuple[float, float]:
+        """Calculate the centroid of a polygon."""
+        n = len(vertices)
+        if n == 0:
+            return (0.0, 0.0)
+
+        cx = sum(v[0] for v in vertices) / n
+        cy = sum(v[1] for v in vertices) / n
+        return (cx, cy)
+
+    def _emit_polygon_area_data(self, polygon_roi: pg.PolyLineROI):
+        """Calculate and emit polygon area data."""
+        if polygon_roi is None:
+            return
+
+        vertices = self._get_polygon_vertices(polygon_roi)
+        if len(vertices) < 3:
+            return
+
+        # Calculate area and perimeter in pixels
+        area_px = self._calculate_polygon_area(vertices)
+        perimeter_px = self._calculate_polygon_perimeter(vertices)
+        centroid = self._calculate_polygon_centroid(vertices)
+
+        # Get calibration value if available
+        cal_value = None
+        area_nm2 = None
+        perimeter_nm = None
+        if self.calibration and hasattr(self.calibration, 'scale'):
+            cal_value = self.calibration.scale
+            area_nm2 = area_px * (cal_value ** 2)  # nm² = px² * (nm/px)²
+            perimeter_nm = perimeter_px * cal_value
+
+        # Get polygon ID
+        polygon_id = f"Polygon_{getattr(polygon_roi, '_polygon_id', 0)}"
+
+        polygon_data = PolygonAreaData(
+            vertices=vertices,
+            area_px=area_px,
+            area_nm2=area_nm2,
+            perimeter_px=perimeter_px,
+            perimeter_nm=perimeter_nm,
+            centroid=centroid,
+            measurement_id=polygon_id,
+            calibration=cal_value
+        )
+
+        # Update the label
+        if polygon_roi in self._polygon_labels:
+            label = self._polygon_labels[polygon_roi]
+            label.set_anchor_position(centroid[0], centroid[1])
+            label.set_text(self._format_area_text(area_px, area_nm2))
+
+        self.polygon_area_created.emit(polygon_data)
+
+    def _format_area_text(self, area_px: float, area_nm2: Optional[float]) -> str:
+        """Format area for display in label."""
+        if area_nm2 is not None:
+            if area_nm2 >= 1e6:  # >= 1 μm²
+                return f"{area_nm2/1e6:.2f} μm²"
+            elif area_nm2 >= 1:
+                return f"{area_nm2:.1f} nm²"
+            else:
+                return f"{area_nm2:.3f} nm²"
+        else:
+            return f"{area_px:.1f} px²"
+
+    def get_polygon_count(self) -> int:
+        """Get the number of active polygons."""
+        return len(self.active_polygon_rois)
+
+    def get_total_measurement_count(self) -> int:
+        """Get total count of all measurements (lines + polygons)."""
+        return len(self.active_line_rois) + len(self.active_polygon_rois) + len(self.completed_measurements)

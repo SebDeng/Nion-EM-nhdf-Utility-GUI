@@ -41,6 +41,52 @@ def create_measurement_icon(size: int = 24, color: QColor = None) -> QIcon:
     return QIcon(pixmap)
 
 
+def create_polygon_icon(size: int = 24, color: QColor = None) -> QIcon:
+    """Create a minimalist polygon/area measurement icon."""
+    if color is None:
+        color = QColor(200, 200, 200)
+
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+
+    pen = QPen(color)
+    pen.setWidth(2)
+    painter.setPen(pen)
+
+    # Draw a pentagon shape
+    margin = 4
+    center_x = size / 2
+    center_y = size / 2
+    radius = (size - 2 * margin) / 2
+
+    import math
+    points = []
+    num_vertices = 5
+    for i in range(num_vertices):
+        angle = 2 * math.pi * i / num_vertices - math.pi / 2
+        x = center_x + radius * math.cos(angle)
+        y = center_y + radius * math.sin(angle)
+        points.append((int(x), int(y)))
+
+    # Draw the polygon
+    for i in range(num_vertices):
+        j = (i + 1) % num_vertices
+        painter.drawLine(points[i][0], points[i][1], points[j][0], points[j][1])
+
+    # Draw vertex circles
+    painter.setBrush(color)
+    circle_radius = 2
+    for x, y in points:
+        painter.drawEllipse(x - circle_radius, y - circle_radius,
+                            circle_radius * 2, circle_radius * 2)
+
+    painter.end()
+    return QIcon(pixmap)
+
+
 class MeasurementToolBar(QFrame):
     """
     Toolbar for measurement tools in preview mode.
@@ -49,6 +95,7 @@ class MeasurementToolBar(QFrame):
 
     # Signals
     create_measurement = Signal()  # Emitted when create measurement is clicked
+    create_polygon = Signal()  # Emitted when create polygon is clicked
     confirm_measurement = Signal()  # Emitted when confirm button is clicked
     clear_all = Signal()  # Emitted when clear all button is clicked
     clear_last = Signal()  # Emitted when clear last button is clicked
@@ -73,7 +120,7 @@ class MeasurementToolBar(QFrame):
         layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(8)
 
-        # Create measurement button with icon
+        # Create measurement line button with icon
         self._create_btn = QToolButton()
         self._create_btn.setIcon(create_measurement_icon(24, QColor(200, 200, 200)))
         self._create_btn.setIconSize(QSize(20, 20))
@@ -81,6 +128,15 @@ class MeasurementToolBar(QFrame):
         self._create_btn.setShortcut("M")
         self._create_btn.clicked.connect(self._on_create_measurement)
         layout.addWidget(self._create_btn)
+
+        # Create polygon area button with icon
+        self._create_polygon_btn = QToolButton()
+        self._create_polygon_btn.setIcon(create_polygon_icon(24, QColor(200, 200, 200)))
+        self._create_polygon_btn.setIconSize(QSize(20, 20))
+        self._create_polygon_btn.setToolTip("Add polygon for area measurement (P)")
+        self._create_polygon_btn.setShortcut("P")
+        self._create_polygon_btn.clicked.connect(self._on_create_polygon)
+        layout.addWidget(self._create_polygon_btn)
 
         # Measurement count label
         self._count_label = QLabel("0")
@@ -95,9 +151,9 @@ class MeasurementToolBar(QFrame):
         sep1.setStyleSheet("color: #555;")
         layout.addWidget(sep1)
 
-        # Distance display label
-        self._distance_label = QLabel("Distance: --")
-        self._distance_label.setMinimumWidth(150)
+        # Measurement display label (shows both distance and area)
+        self._distance_label = QLabel("--")
+        self._distance_label.setMinimumWidth(180)
         self._distance_label.setStyleSheet("font-family: monospace; font-size: 12px;")
         layout.addWidget(self._distance_label)
 
@@ -156,6 +212,12 @@ class MeasurementToolBar(QFrame):
         self._count_label.setText(str(self._measurement_count))
         self.create_measurement.emit()
 
+    def _on_create_polygon(self):
+        """Handle create polygon button click."""
+        self._measurement_count += 1
+        self._count_label.setText(str(self._measurement_count))
+        self.create_polygon.emit()
+
     def _on_clear_last(self):
         """Handle clear last button click."""
         if self._measurement_count > 0:
@@ -165,7 +227,7 @@ class MeasurementToolBar(QFrame):
 
     def _on_clear_all(self):
         """Handle clear all button click."""
-        self._distance_label.setText("Distance: --")
+        self._distance_label.setText("--")
         self._measurement_count = 0
         self._count_label.setText("0")
         self.clear_all.emit()
@@ -187,19 +249,37 @@ class MeasurementToolBar(QFrame):
         """Update the distance display."""
         if distance_nm is not None:
             if distance_nm >= 1000:
-                text = f"Distance: {distance_nm/1000:.3f} μm ({distance_px:.1f} px)"
+                text = f"Dist: {distance_nm/1000:.3f} μm ({distance_px:.1f} px)"
             elif distance_nm >= 1:
-                text = f"Distance: {distance_nm:.2f} nm ({distance_px:.1f} px)"
+                text = f"Dist: {distance_nm:.2f} nm ({distance_px:.1f} px)"
             else:
-                text = f"Distance: {distance_nm:.3f} nm ({distance_px:.1f} px)"
+                text = f"Dist: {distance_nm:.3f} nm ({distance_px:.1f} px)"
         else:
-            text = f"Distance: {distance_px:.1f} px"
+            text = f"Dist: {distance_px:.1f} px"
 
         self._distance_label.setText(text)
 
+    def update_area(self, area_px: float, area_nm2: float = None):
+        """Update the area display for polygon measurements."""
+        if area_nm2 is not None:
+            if area_nm2 >= 1e6:
+                text = f"Area: {area_nm2/1e6:.2f} μm² ({area_px:.0f} px²)"
+            elif area_nm2 >= 1:
+                text = f"Area: {area_nm2:.1f} nm² ({area_px:.0f} px²)"
+            else:
+                text = f"Area: {area_nm2:.3f} nm² ({area_px:.0f} px²)"
+        else:
+            text = f"Area: {area_px:.0f} px²"
+
+        self._distance_label.setText(text)
+
+    def clear_display(self):
+        """Clear the measurement display."""
+        self._distance_label.setText("--")
+
     def clear_distance(self):
-        """Clear the distance display."""
-        self._distance_label.setText("Distance: --")
+        """Clear the distance display (alias for clear_display)."""
+        self.clear_display()
 
     def set_theme(self, is_dark: bool):
         """Update toolbar theme."""
@@ -211,6 +291,7 @@ class MeasurementToolBar(QFrame):
         # Update icon color based on theme
         icon_color = QColor(200, 200, 200) if self._is_dark_mode else QColor(80, 80, 80)
         self._create_btn.setIcon(create_measurement_icon(24, icon_color))
+        self._create_polygon_btn.setIcon(create_polygon_icon(24, icon_color))
 
         if self._is_dark_mode:
             # Dark theme

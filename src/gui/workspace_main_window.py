@@ -80,6 +80,7 @@ class WorkspaceMainWindow(QMainWindow):
         # Add measurement toolbar at the top right
         self._measurement_toolbar = MeasurementToolBar()
         self._measurement_toolbar.create_measurement.connect(self._on_create_measurement)
+        self._measurement_toolbar.create_polygon.connect(self._on_create_polygon)
         self._measurement_toolbar.clear_all.connect(self._on_clear_measurements)
         self._measurement_toolbar.clear_last.connect(self._on_clear_last_measurement)
         self._measurement_toolbar.toggle_labels.connect(self._on_toggle_measurement_labels)
@@ -915,11 +916,27 @@ class WorkspaceMainWindow(QMainWindow):
                     display = panel.display_panel
                     display.create_measurement()
                     # Connect measurement signal to update toolbar (only if not already connected)
-                    if hasattr(display, '_measurement_overlay') and display._measurement_overlay:
-                        overlay_id = id(display._measurement_overlay)
-                        if overlay_id not in self._measurement_connected_panels:
-                            display._measurement_overlay.measurement_created.connect(self._on_measurement_updated)
-                            self._measurement_connected_panels.add(overlay_id)
+                    self._connect_measurement_signals(display)
+
+    def _on_create_polygon(self):
+        """Handle create polygon button click for area measurement."""
+        if self._workspace and self._workspace.selected_panel:
+            panel = self._workspace.selected_panel
+            if isinstance(panel, WorkspaceDisplayPanel):
+                if hasattr(panel, 'display_panel') and panel.display_panel:
+                    display = panel.display_panel
+                    display.create_polygon_area()
+                    # Connect measurement signals to update toolbar
+                    self._connect_measurement_signals(display)
+
+    def _connect_measurement_signals(self, display):
+        """Connect measurement signals from display panel if not already connected."""
+        if hasattr(display, '_measurement_overlay') and display._measurement_overlay:
+            overlay_id = id(display._measurement_overlay)
+            if overlay_id not in self._measurement_connected_panels:
+                display._measurement_overlay.measurement_created.connect(self._on_measurement_updated)
+                display._measurement_overlay.polygon_area_created.connect(self._on_polygon_area_updated)
+                self._measurement_connected_panels.add(overlay_id)
 
     def _on_clear_measurements(self):
         """Handle clear all measurements button click."""
@@ -945,6 +962,15 @@ class WorkspaceMainWindow(QMainWindow):
             self._measurement_toolbar.update_distance(
                 measurement_data.distance_px,
                 measurement_data.distance_nm
+            )
+
+    def _on_polygon_area_updated(self, polygon_data):
+        """Handle polygon area data updates from display panels."""
+        from src.gui.measurement_overlay import PolygonAreaData
+        if isinstance(polygon_data, PolygonAreaData):
+            self._measurement_toolbar.update_area(
+                polygon_data.area_px,
+                polygon_data.area_nm2
             )
 
     def _on_toggle_measurement_labels(self, visible: bool):
