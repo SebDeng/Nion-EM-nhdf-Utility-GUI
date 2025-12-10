@@ -21,9 +21,10 @@ class LargeHandlePolyLineROI(pg.PolyLineROI):
     HANDLE_RADIUS = 10  # Larger than default ~5
 
     def __init__(self, positions, closed=False, pos=None, **args):
-        super().__init__(positions, closed=closed, pos=pos, **args)
+        # Initialize handle color BEFORE super().__init__ because addHandle is called during init
         self._handle_color = QColor('lime')  # Default, will be set later
-        # Resize initial handles
+        super().__init__(positions, closed=closed, pos=pos, **args)
+        # Resize initial handles (some may not have been caught by addHandle override)
         self._resize_all_handles()
 
     def set_handle_color(self, color: QColor):
