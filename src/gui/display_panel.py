@@ -1105,15 +1105,28 @@ class DisplayPanel(QWidget):
         """Create a new distance measurement line."""
         if self._measurement_overlay:
             # Set calibration if available
-            if self._data and self._data.dimensional_calibrations:
-                spatial_cals = self._data.dimensional_calibrations
-                if self._data.data_descriptor.is_sequence and len(spatial_cals) > 1:
-                    spatial_cals = spatial_cals[1:]
-                if spatial_cals:
-                    self._measurement_overlay.set_calibration(spatial_cals[0])
+            self._set_measurement_calibration()
             # Update snap points before creating measurement
             self._update_measurement_snap_points()
             self._measurement_overlay.create_measurement_line()
+
+    def create_polygon_area(self):
+        """Create a new polygon for area measurement."""
+        if self._measurement_overlay:
+            # Set calibration if available
+            self._set_measurement_calibration()
+            # Update snap points before creating polygon
+            self._update_measurement_snap_points()
+            self._measurement_overlay.create_polygon_area()
+
+    def _set_measurement_calibration(self):
+        """Set the calibration on the measurement overlay."""
+        if self._data and self._data.dimensional_calibrations:
+            spatial_cals = self._data.dimensional_calibrations
+            if self._data.data_descriptor.is_sequence and len(spatial_cals) > 1:
+                spatial_cals = spatial_cals[1:]
+            if spatial_cals:
+                self._measurement_overlay.set_calibration(spatial_cals[0])
 
     def confirm_measurement(self):
         """Confirm the current measurement and make it permanent."""
