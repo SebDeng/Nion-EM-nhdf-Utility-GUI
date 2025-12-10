@@ -30,8 +30,8 @@ class DoseLabel(QFrame):
     closed = Signal(str)  # Emits label_id when closed
 
     # Class constants
-    DEFAULT_WIDTH = 180
-    DEFAULT_HEIGHT = 90
+    DEFAULT_WIDTH = 220
+    DEFAULT_HEIGHT = 85
     MAX_DOSE_LABELS_PER_PANEL = 2
 
     def __init__(self, label_id: Optional[str] = None, parent=None):
@@ -93,22 +93,22 @@ class DoseLabel(QFrame):
         content_layout.setContentsMargins(6, 4, 6, 4)
         content_layout.setSpacing(2)
 
-        # Dose label
+        # Dose label (blue, darker for light background)
         self._dose_label = QLabel("Dose: --")
-        self._dose_label.setFont(QFont("monospace", 9))
-        self._dose_label.setStyleSheet("color: #4a9eff;")
+        self._dose_label.setFont(QFont("monospace", 10))
+        self._dose_label.setStyleSheet("color: #0066cc;")
         content_layout.addWidget(self._dose_label)
 
-        # Flux label
+        # Flux label (green, darker for light background)
         self._flux_label = QLabel("Flux: --")
-        self._flux_label.setFont(QFont("monospace", 9))
-        self._flux_label.setStyleSheet("color: #4aff9e;")
+        self._flux_label.setFont(QFont("monospace", 10))
+        self._flux_label.setStyleSheet("color: #008844;")
         content_layout.addWidget(self._flux_label)
 
-        # Probe current label (smaller)
+        # Probe current label (smaller, gray)
         self._probe_label = QLabel("I = -- pA")
-        self._probe_label.setFont(QFont("monospace", 8))
-        self._probe_label.setStyleSheet("color: #888;")
+        self._probe_label.setFont(QFont("monospace", 9))
+        self._probe_label.setStyleSheet("color: #555;")
         content_layout.addWidget(self._probe_label)
 
         layout.addWidget(self._content_widget)
@@ -118,20 +118,13 @@ class DoseLabel(QFrame):
 
     def _apply_style(self):
         """Apply the visual style based on current theme."""
-        if self._is_dark_theme:
-            bg_color = 'rgba(40, 50, 60, 230)'
-            title_bg = 'rgba(50, 65, 80, 240)'
-            border_color = '#4a7090'
-            text_color = '#e0e0e0'
-            btn_color = '#888'
-            btn_hover = '#ccc'
-        else:
-            bg_color = 'rgba(240, 245, 250, 230)'
-            title_bg = 'rgba(200, 220, 240, 240)'
-            border_color = '#90a0b0'
-            text_color = '#303030'
-            btn_color = '#666'
-            btn_hover = '#333'
+        # Semi-transparent background, black text for readability
+        bg_color = 'rgba(255, 255, 255, 180)'
+        title_bg = 'rgba(100, 180, 220, 200)'
+        border_color = '#4a9eff'
+        text_color = '#000000'
+        btn_color = '#333'
+        btn_hover = '#000'
 
         self.setStyleSheet(f"""
             DoseLabel {{
