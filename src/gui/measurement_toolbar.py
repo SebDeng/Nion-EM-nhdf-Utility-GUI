@@ -4,7 +4,7 @@ Provides distance measurement tools with controls.
 """
 
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QPushButton, QToolButton
+    QFrame, QHBoxLayout, QLabel, QPushButton, QToolButton, QCheckBox
 )
 from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtGui import QIcon, QPainter, QPixmap, QPen, QColor
@@ -52,6 +52,7 @@ class MeasurementToolBar(QFrame):
     confirm_measurement = Signal()  # Emitted when confirm button is clicked
     clear_all = Signal()  # Emitted when clear all button is clicked
     clear_last = Signal()  # Emitted when clear last button is clicked
+    toggle_labels = Signal(bool)  # Emitted when show labels checkbox is toggled
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -117,6 +118,19 @@ class MeasurementToolBar(QFrame):
         self._clear_all_btn.clicked.connect(self._on_clear_all)
         layout.addWidget(self._clear_all_btn)
 
+        # Separator
+        sep3 = QFrame()
+        sep3.setFrameShape(QFrame.VLine)
+        sep3.setStyleSheet("color: #555;")
+        layout.addWidget(sep3)
+
+        # Show labels checkbox
+        self._show_labels_cb = QCheckBox("Show Labels")
+        self._show_labels_cb.setChecked(True)
+        self._show_labels_cb.setToolTip("Show/hide floating distance labels\nDouble-click label to reset position")
+        self._show_labels_cb.toggled.connect(self._on_toggle_labels)
+        layout.addWidget(self._show_labels_cb)
+
         # Add stretch to push everything to the left
         layout.addStretch()
 
@@ -139,6 +153,10 @@ class MeasurementToolBar(QFrame):
         self._measurement_count = 0
         self._count_label.setText("0")
         self.clear_all.emit()
+
+    def _on_toggle_labels(self, checked: bool):
+        """Handle show labels checkbox toggle."""
+        self.toggle_labels.emit(checked)
 
     def set_measurement_count(self, count: int):
         """Update the measurement count display."""
@@ -217,6 +235,24 @@ class MeasurementToolBar(QFrame):
                     color: #666;
                     border-color: #444;
                 }
+                QCheckBox {
+                    color: #e0e0e0;
+                    spacing: 5px;
+                }
+                QCheckBox::indicator {
+                    width: 16px;
+                    height: 16px;
+                    border: 1px solid #555;
+                    border-radius: 3px;
+                    background-color: #3a3a3a;
+                }
+                QCheckBox::indicator:checked {
+                    background-color: #0d7377;
+                    border-color: #0d7377;
+                }
+                QCheckBox::indicator:hover {
+                    border-color: #666;
+                }
             """)
         else:
             # Light theme
@@ -261,5 +297,23 @@ class MeasurementToolBar(QFrame):
                     background-color: #f0f0f0;
                     color: #999;
                     border-color: #ccc;
+                }
+                QCheckBox {
+                    color: #333;
+                    spacing: 5px;
+                }
+                QCheckBox::indicator {
+                    width: 16px;
+                    height: 16px;
+                    border: 1px solid #bbb;
+                    border-radius: 3px;
+                    background-color: #e0e0e0;
+                }
+                QCheckBox::indicator:checked {
+                    background-color: #14a085;
+                    border-color: #14a085;
+                }
+                QCheckBox::indicator:hover {
+                    border-color: #999;
                 }
             """)
