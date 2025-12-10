@@ -93,22 +93,19 @@ class DoseLabel(QFrame):
         content_layout.setContentsMargins(6, 4, 6, 4)
         content_layout.setSpacing(2)
 
-        # Dose label (blue, darker for light background)
+        # Dose label (blue)
         self._dose_label = QLabel("Dose: --")
         self._dose_label.setFont(QFont("monospace", 10))
-        self._dose_label.setStyleSheet("color: #0066cc;")
         content_layout.addWidget(self._dose_label)
 
-        # Flux label (green, darker for light background)
+        # Flux label (green)
         self._flux_label = QLabel("Flux: --")
         self._flux_label.setFont(QFont("monospace", 10))
-        self._flux_label.setStyleSheet("color: #008844;")
         content_layout.addWidget(self._flux_label)
 
-        # Probe current label (smaller, gray)
+        # Probe current label (smaller)
         self._probe_label = QLabel("I = -- pA")
         self._probe_label.setFont(QFont("monospace", 9))
-        self._probe_label.setStyleSheet("color: #555;")
         content_layout.addWidget(self._probe_label)
 
         layout.addWidget(self._content_widget)
@@ -118,41 +115,39 @@ class DoseLabel(QFrame):
 
     def _apply_style(self):
         """Apply the visual style based on current theme."""
-        # Semi-transparent background, black text for readability
-        bg_color = 'rgba(255, 255, 255, 180)'
-        title_bg = 'rgba(100, 180, 220, 200)'
-        border_color = '#4a9eff'
-        text_color = '#000000'
-        btn_color = '#333'
-        btn_hover = '#000'
-
-        self.setStyleSheet(f"""
-            DoseLabel {{
-                background-color: {bg_color};
-                border: 1px solid {border_color};
-                border-radius: 4px;
-            }}
-            QWidget#DoseLabelTitleBar {{
-                background-color: {title_bg};
-                border-top-left-radius: 3px;
-                border-top-right-radius: 3px;
-            }}
-            QWidget#DoseLabelContent {{
+        # Semi-transparent light background with black text
+        self.setStyleSheet("""
+            DoseLabel {
+                background-color: rgba(240, 248, 255, 200);
+                border: 1px solid #5599dd;
+                border-radius: 5px;
+            }
+            QWidget#DoseLabelTitleBar {
+                background-color: rgba(70, 140, 200, 220);
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+            }
+            QWidget#DoseLabelTitleBar QLabel {
                 background-color: transparent;
-            }}
-            QLabel {{
-                color: {text_color};
-            }}
-            QPushButton {{
+                color: #ffffff;
+            }
+            QWidget#DoseLabelContent {
+                background-color: transparent;
+            }
+            QWidget#DoseLabelContent QLabel {
+                background-color: transparent;
+                color: #000000;
+            }
+            QPushButton {
                 background: transparent;
                 border: none;
-                color: {btn_color};
+                color: #ffffff;
                 font-weight: bold;
                 font-size: 14px;
-            }}
-            QPushButton:hover {{
-                color: {btn_hover};
-            }}
+            }
+            QPushButton:hover {
+                color: #ffff00;
+            }
         """)
 
     def set_theme(self, is_dark: bool):
