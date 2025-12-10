@@ -132,6 +132,14 @@ class UnifiedControlPanel(QFrame):
         self._scalebar_check.toggled.connect(self._on_scalebar_toggled)
         controls_layout.addWidget(self._scalebar_check)
 
+        # Subscan area checkbox (only enabled for context scans)
+        self._subscan_area_check = QCheckBox("Subscan Area")
+        self._subscan_area_check.setChecked(False)
+        self._subscan_area_check.setToolTip("Show typical subscan area (only available for context scans)")
+        self._subscan_area_check.toggled.connect(self._on_subscan_area_toggled)
+        self._subscan_area_check.setEnabled(False)  # Disabled by default
+        controls_layout.addWidget(self._subscan_area_check)
+
         layout.addWidget(controls_section)
 
         # Info section
@@ -255,6 +263,19 @@ class UnifiedControlPanel(QFrame):
         if hasattr(display, '_scalebar_check'):
             self._scalebar_check.setChecked(display._scalebar_check.isChecked())
 
+        # Sync subscan area overlay
+        if hasattr(display, 'is_subscan_overlay_available'):
+            is_available = display.is_subscan_overlay_available()
+            self._subscan_area_check.setEnabled(is_available)
+            if not is_available:
+                self._subscan_area_check.setChecked(False)
+                self._subscan_area_check.setToolTip("Only available for context scans (not subscans)")
+            else:
+                self._subscan_area_check.setToolTip("Show typical subscan area on this context scan")
+                # Sync visibility state
+                if hasattr(display, '_subscan_overlay'):
+                    self._subscan_area_check.setChecked(display._subscan_overlay._visible)
+
         # Sync frame controls
         if hasattr(display, '_data') and display._data:
             if display._data.num_frames > 1:
@@ -332,6 +353,14 @@ class UnifiedControlPanel(QFrame):
         """Handle scalebar toggle."""
         if not self._is_updating:
             self.scalebar_toggled.emit(checked)
+
+    def _on_subscan_area_toggled(self, checked: bool):
+        """Handle subscan area overlay toggle."""
+        if not self._is_updating and self._current_panel:
+            if hasattr(self._current_panel, 'display_panel'):
+                display = self._current_panel.display_panel
+                if hasattr(display, 'set_subscan_overlay_visible'):
+                    display.set_subscan_overlay_visible(checked)
 
     def _on_frame_changed(self, frame: int):
         """Handle frame change."""

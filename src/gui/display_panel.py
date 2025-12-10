@@ -195,6 +195,147 @@ class ScaleBarItem(pg.GraphicsObject):
         self.update()
 
 
+class SubscanAreaOverlay(pg.GraphicsObject):
+    """
+    An overlay that shows the typical subscan area on a full context scan.
+    Draws a centered rectangle indicating where subscans would be taken.
+    Only shown for full context images (not subscans themselves).
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._image_width = 100  # pixels
+        self._image_height = 100  # pixels
+        self._subscan_ratio = 0.25  # Default: subscan is 25% of context
+        self._visible = False
+        self._is_context_scan = False  # Only show for context scans (not subscans)
+
+    def set_geometry(self, image_width: int, image_height: int,
+                     subscan_ratio: float = 0.25, is_context_scan: bool = False):
+        """
+        Set the overlay geometry.
+
+        Args:
+            image_width: Width of the image in pixels
+            image_height: Height of the image in pixels
+            subscan_ratio: Ratio of subscan size to context size (0.0-1.0)
+            is_context_scan: True if this is a full context scan (not a subscan)
+        """
+        self._image_width = image_width
+        self._image_height = image_height
+        self._subscan_ratio = max(0.05, min(0.95, subscan_ratio))  # Clamp to valid range
+        self._is_context_scan = is_context_scan
+        self.update()
+
+    def boundingRect(self):
+        """Return bounding rectangle in data coordinates."""
+        return pg.QtCore.QRectF(0, 0, self._image_width, self._image_height)
+
+    def paint(self, painter, option, widget):
+        """Paint the subscan area rectangle."""
+        if not self._visible or not self._is_context_scan:
+            return
+
+        # Save painter state
+        painter.save()
+
+        # Calculate subscan rectangle (centered)
+        subscan_width = self._image_width * self._subscan_ratio
+        subscan_height = self._image_height * self._subscan_ratio
+
+        # Center position
+        center_x = self._image_width / 2
+        center_y = self._image_height / 2
+
+        rect_x = center_x - subscan_width / 2
+        rect_y = center_y - subscan_height / 2
+
+        # Draw the subscan area rectangle
+        # Orange/yellow color to make it visible
+        pen_color = pg.mkColor(255, 165, 0, 200)  # Orange with some transparency
+        fill_color = pg.mkColor(255, 165, 0, 30)  # Very transparent fill
+
+        # Draw filled rectangle with semi-transparent fill
+        painter.setBrush(pg.mkBrush(fill_color))
+        painter.setPen(pg.mkPen(pen_color, width=2, style=pg.QtCore.Qt.DashLine))
+
+        subscan_rect = pg.QtCore.QRectF(rect_x, rect_y, subscan_width, subscan_height)
+        painter.drawRect(subscan_rect)
+
+        # Draw corner markers for better visibility
+        corner_size = min(subscan_width, subscan_height) * 0.1
+        painter.setPen(pg.mkPen(pen_color, width=3))
+        painter.setBrush(pg.QtCore.Qt.NoBrush)
+
+        # Top-left corner
+        painter.drawLine(pg.QtCore.QPointF(rect_x, rect_y),
+                        pg.QtCore.QPointF(rect_x + corner_size, rect_y))
+        painter.drawLine(pg.QtCore.QPointF(rect_x, rect_y),
+                        pg.QtCore.QPointF(rect_x, rect_y + corner_size))
+
+        # Top-right corner
+        painter.drawLine(pg.QtCore.QPointF(rect_x + subscan_width, rect_y),
+                        pg.QtCore.QPointF(rect_x + subscan_width - corner_size, rect_y))
+        painter.drawLine(pg.QtCore.QPointF(rect_x + subscan_width, rect_y),
+                        pg.QtCore.QPointF(rect_x + subscan_width, rect_y + corner_size))
+
+        # Bottom-left corner
+        painter.drawLine(pg.QtCore.QPointF(rect_x, rect_y + subscan_height),
+                        pg.QtCore.QPointF(rect_x + corner_size, rect_y + subscan_height))
+        painter.drawLine(pg.QtCore.QPointF(rect_x, rect_y + subscan_height),
+                        pg.QtCore.QPointF(rect_x, rect_y + subscan_height - corner_size))
+
+        # Bottom-right corner
+        painter.drawLine(pg.QtCore.QPointF(rect_x + subscan_width, rect_y + subscan_height),
+                        pg.QtCore.QPointF(rect_x + subscan_width - corner_size, rect_y + subscan_height))
+        painter.drawLine(pg.QtCore.QPointF(rect_x + subscan_width, rect_y + subscan_height),
+                        pg.QtCore.QPointF(rect_x + subscan_width, rect_y + subscan_height - corner_size))
+
+        # Draw label "Subscan Area" at the top edge of the rectangle
+        font = painter.font()
+        # Font size proportional to subscan area, not full image
+        font_size = max(int(subscan_height * 0.08), 8)  # 8% of subscan height, min 8px
+        font_size = min(font_size, int(subscan_width * 0.15))  # Cap at 15% of width
+        font.setPixelSize(font_size)
+        font.setBold(True)
+        painter.setFont(font)
+
+        # Position label at the top edge of the rectangle (just above it)
+        label_x = rect_x + subscan_width / 2  # Center horizontally
+        label_y = rect_y + subscan_height + font_size * 0.3  # Just above top edge
+
+        # Transform for text (flip to correct orientation)
+        painter.translate(label_x, label_y)
+        painter.scale(1, -1)
+
+        # Draw text with shadow - compact text rect
+        text = "Subscan Area"
+        text_rect = pg.QtCore.QRectF(-subscan_width * 0.6, -font_size * 0.6,
+                                      subscan_width * 1.2, font_size * 1.2)
+
+        # Shadow (thinner for smaller text)
+        painter.setPen(pg.mkPen(color=(0, 0, 0, 200), width=1))
+        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            painter.drawText(text_rect.translated(dx, dy), pg.QtCore.Qt.AlignCenter, text)
+
+        # Text in bright yellow for visibility
+        yellow_color = pg.mkColor(255, 255, 0, 255)  # Bright yellow
+        painter.setPen(pg.mkPen(yellow_color))
+        painter.drawText(text_rect, pg.QtCore.Qt.AlignCenter, text)
+
+        # Restore painter state
+        painter.restore()
+
+    def setVisible(self, visible: bool):
+        """Set visibility."""
+        self._visible = visible
+        self.update()
+
+    def is_available(self) -> bool:
+        """Check if this overlay is available (i.e., the image is a context scan)."""
+        return self._is_context_scan
+
+
 def get_colormap(name: str) -> pg.ColorMap:
     """Get a colormap by name, supporting both pyqtgraph and matplotlib colormaps."""
     # Try pyqtgraph first
@@ -449,6 +590,10 @@ class DisplayPanel(QWidget):
         # Scale bar
         self._scale_bar = ScaleBarItem()
         self._plot_item.addItem(self._scale_bar)
+
+        # Subscan area overlay
+        self._subscan_overlay = SubscanAreaOverlay()
+        self._plot_item.addItem(self._subscan_overlay)
 
         # Line profile overlay
         self._line_profile_overlay = LineProfileOverlay(self._plot_item, self._image_item)
@@ -736,12 +881,65 @@ class DisplayPanel(QWidget):
         self._scale_bar.set_scale(scale_per_pixel, units, nx, ny)
         self._scale_bar.setVisible(self._scalebar_check.isChecked())
 
+        # Also update subscan overlay geometry when data changes
+        self._update_subscan_overlay()
+
+    def _update_subscan_overlay(self):
+        """Update the subscan area overlay based on current data."""
+        if self._data is None or not self._data.is_2d_image:
+            self._subscan_overlay.set_geometry(100, 100, 0.125, False)
+            return
+
+        ny, nx = self._data.frame_shape
+
+        # Check if this is a context scan (NOT a subscan)
+        # A context scan is one where is_subscan is False
+        is_context_scan = not self._data.is_subscan
+
+        # Calculate the subscan ratio
+        # For context scans: typical subscan is ~12.5% (10nm out of 80nm context)
+        # Based on real data: subscans are typically 512 pixels out of 4096 context = 12.5%
+        subscan_ratio = 0.125  # Default 12.5% (10nm / 80nm)
+
+        # Try to get a more accurate ratio from metadata if available
+        fov_info = self._data.actual_fov
+        context_fov = self._data.context_fov_nm
+
+        if fov_info and context_fov and context_fov > 0:
+            actual_fov = fov_info[0]  # Use Y dimension FOV
+            if is_context_scan:
+                # This is a context scan, so actual_fov == context_fov
+                # Use the typical subscan ratio of 12.5%
+                subscan_ratio = 0.125
+            else:
+                # This is a subscan - we could calculate the ratio if needed
+                # but we don't show the overlay for subscans anyway
+                subscan_ratio = actual_fov / context_fov if context_fov > 0 else 0.125
+
+        # Update the overlay geometry
+        self._subscan_overlay.set_geometry(nx, ny, subscan_ratio, is_context_scan)
+
+    def _on_subscan_overlay_toggled(self, checked: bool):
+        """Handle subscan overlay visibility toggle."""
+        self._subscan_overlay.setVisible(checked)
+
+    def is_subscan_overlay_available(self) -> bool:
+        """Check if the subscan overlay is available for the current data."""
+        return self._subscan_overlay.is_available()
+
+    def set_subscan_overlay_visible(self, visible: bool):
+        """Set the visibility of the subscan overlay."""
+        if self._subscan_overlay.is_available():
+            self._subscan_overlay.setVisible(visible)
+
     def clear(self):
         """Clear the display."""
         self._data = None
         self._current_frame = 0
         self._image_item.clear()
         self._scale_bar.setVisible(False)
+        self._subscan_overlay.setVisible(False)
+        self._subscan_overlay.set_geometry(100, 100, 0.125, False)
         self._frame_controls.stop_playback()
         self._frame_controls.set_num_frames(1)
         self._show_placeholder()
