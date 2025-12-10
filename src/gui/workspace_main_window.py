@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QApplication, QDialog, QLabel, QPushButton,
     QInputDialog
 )
-from PySide6.QtCore import Qt, Signal, QSettings
+from PySide6.QtCore import Qt, Signal, QSettings, QTimer
 from PySide6.QtGui import QAction, QKeySequence, QPixmap
 
 import pathlib
@@ -82,6 +82,8 @@ class WorkspaceMainWindow(QMainWindow):
         self._measurement_toolbar.create_measurement.connect(self._on_create_measurement)
         self._measurement_toolbar.clear_all.connect(self._on_clear_measurements)
         self._measurement_toolbar.clear_last.connect(self._on_clear_last_measurement)
+        self._measurement_toolbar.toggle_labels.connect(self._on_toggle_measurement_labels)
+        self._measurement_toolbar.font_size_changed.connect(self._on_measurement_font_size_changed)
         top_toolbar_layout.addWidget(self._measurement_toolbar, 1)  # Give stretch factor to fill space
 
         central_layout.addWidget(top_toolbar_widget)
@@ -945,6 +947,28 @@ class WorkspaceMainWindow(QMainWindow):
                 measurement_data.distance_nm
             )
 
+    def _on_toggle_measurement_labels(self, visible: bool):
+        """Handle toggle labels checkbox from measurement toolbar."""
+        # Toggle labels for all display panels
+        if self._workspace:
+            for panel in self._workspace.panels:
+                if isinstance(panel, WorkspaceDisplayPanel):
+                    if hasattr(panel, 'display_panel') and panel.display_panel:
+                        dp = panel.display_panel
+                        if hasattr(dp, '_measurement_overlay') and dp._measurement_overlay:
+                            dp._measurement_overlay.set_labels_visible(visible)
+
+    def _on_measurement_font_size_changed(self, size: int):
+        """Handle font size change from measurement toolbar."""
+        # Update font size for all display panels
+        if self._workspace:
+            for panel in self._workspace.panels:
+                if isinstance(panel, WorkspaceDisplayPanel):
+                    if hasattr(panel, 'display_panel') and panel.display_panel:
+                        dp = panel.display_panel
+                        if hasattr(dp, '_measurement_overlay') and dp._measurement_overlay:
+                            dp._measurement_overlay.set_label_font_size(size)
+
     def _on_clear_analysis(self):
         """Handle clear analysis request."""
         # Clear analysis panel
@@ -1202,7 +1226,9 @@ class WorkspaceMainWindow(QMainWindow):
             # Update histogram when data is loaded
             self._update_histogram_for_panel(panel)
             # Re-sync unified controls to update subscan checkbox state
-            self._update_unified_controls(panel)
+            # Use QTimer.singleShot to defer sync until after Qt event loop processes
+            # This ensures the display panel has fully updated its state
+            QTimer.singleShot(0, lambda: self._unified_controls.set_current_panel(panel, force_sync=True))
 
         self._update_export_actions()
 

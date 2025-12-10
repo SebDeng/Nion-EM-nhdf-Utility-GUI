@@ -3,9 +3,9 @@ Measurement overlay for display panels.
 Provides distance measurement tools with visual feedback.
 """
 
-from PySide6.QtCore import Signal, QObject, Qt
-from PySide6.QtGui import QPen, QColor, QFont
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Signal, QObject, Qt, QPointF
+from PySide6.QtGui import QPen, QColor, QFont, QPainterPath
+from PySide6.QtWidgets import QApplication, QGraphicsItem
 import pyqtgraph as pg
 import numpy as np
 from typing import Optional, Tuple, List
@@ -64,6 +64,243 @@ class SnapIndicator(pg.GraphicsObject):
         painter.setBrush(pg.mkBrush(ring_color))
         painter.setPen(pg.QtCore.Qt.NoPen)
         painter.drawEllipse(pg.QtCore.QPointF(x, y), 3, 3)
+
+
+class DraggableDistanceLabel(pg.GraphicsObject):
+    """
+    A draggable label that displays distance for a measurement line.
+    Can be repositioned by the user while maintaining a connector line
+    back to the measurement line's midpoint.
+    """
+
+    # Default font size
+    DEFAULT_FONT_SIZE = 12
+
+    def __init__(self, color: str = 'lime', parent=None):
+        super().__init__(parent)
+        self._color = color
+        self._text = "--"
+        self._label_pos = QPointF(0, 0)  # Label position (can be dragged)
+        self._anchor_pos = QPointF(0, 0)  # Line midpoint (anchor for connector)
+        self._is_dragging = False
+        self._drag_offset = QPointF(0, 0)
+        self._user_offset = QPointF(0, 0)  # User's drag offset from anchor
+        self._visible = True
+        self._font_size = self.DEFAULT_FONT_SIZE
+        self._font = QFont("Arial", self._font_size, QFont.Bold)
+        self._padding = 6
+        self._show_connector = True  # Show line from label to anchor
+
+        # Enable mouse interaction
+        self.setFlag(QGraphicsItem.ItemIsMovable, False)  # We handle movement manually
+        self.setAcceptHoverEvents(True)
+        self.setAcceptedMouseButtons(Qt.LeftButton)
+
+        # Important: Ignore transformations so text doesn't flip with image
+        self.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+
+    def set_text(self, text: str):
+        """Set the distance text to display."""
+        self._text = text
+        self.update()
+
+    def set_color(self, color: str):
+        """Set the label color."""
+        self._color = color
+        self.update()
+
+    def set_anchor_position(self, x: float, y: float):
+        """Set the anchor position (measurement line midpoint) in item coordinates."""
+        self._anchor_pos = QPointF(x, y)
+        # Update label position based on anchor + user offset
+        self._label_pos = self._anchor_pos + self._user_offset
+        # Move the item to the anchor position (for ItemIgnoresTransformations)
+        self.setPos(self._anchor_pos)
+        self.prepareGeometryChange()
+        self.update()
+
+    def reset_position(self):
+        """Reset label to default position (at anchor with small offset)."""
+        self._user_offset = QPointF(30, -30)  # Default offset above and to the right (in screen pixels)
+        self._label_pos = self._anchor_pos + self._user_offset
+        self.prepareGeometryChange()
+        self.update()
+
+    def set_visible(self, visible: bool):
+        """Set label visibility."""
+        self._visible = visible
+        self.update()
+
+    def is_visible(self) -> bool:
+        """Check if label is visible."""
+        return self._visible
+
+    def set_show_connector(self, show: bool):
+        """Set whether to show the connector line."""
+        self._show_connector = show
+        self.update()
+
+    def set_font_size(self, size: int):
+        """Set the font size for the label."""
+        self._font_size = max(8, min(32, size))  # Clamp between 8 and 32
+        self._font = QFont("Arial", self._font_size, QFont.Bold)
+        self.prepareGeometryChange()
+        self.update()
+
+    def get_font_size(self) -> int:
+        """Get the current font size."""
+        return self._font_size
+
+    def boundingRect(self):
+        """Return bounding rectangle encompassing label and connector."""
+        if not self._visible:
+            return pg.QtCore.QRectF(0, 0, 0, 0)
+
+        # Calculate text size
+        fm = pg.QtGui.QFontMetrics(self._font)
+        text_rect = fm.boundingRect(self._text)
+        text_width = text_rect.width() + self._padding * 2
+        text_height = text_rect.height() + self._padding * 2
+
+        # With ItemIgnoresTransformations, we work in screen coordinates relative to anchor (0,0)
+        offset_x = self._user_offset.x()
+        offset_y = self._user_offset.y()
+
+        # Label rectangle relative to anchor
+        label_left = offset_x - text_width / 2
+        label_top = offset_y - text_height / 2
+
+        # Include anchor point (0,0) and connector in bounds
+        min_x = min(label_left, 0) - 10
+        min_y = min(label_top, 0) - 10
+        max_x = max(label_left + text_width, 0) + 10
+        max_y = max(label_top + text_height, 0) + 10
+
+        return pg.QtCore.QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
+
+    def paint(self, painter, option, widget):
+        """Paint the label and connector line."""
+        if not self._visible:
+            return
+
+        color = QColor(self._color)
+        painter.setFont(self._font)
+
+        # Calculate text dimensions
+        fm = painter.fontMetrics()
+        text_rect = fm.boundingRect(self._text)
+        text_width = text_rect.width() + self._padding * 2
+        text_height = text_rect.height() + self._padding * 2
+
+        # With ItemIgnoresTransformations, anchor is at (0,0), label is at user_offset
+        label_x = self._user_offset.x()
+        label_y = self._user_offset.y()
+
+        # Draw connector line from anchor (0,0) to label
+        if self._show_connector:
+            offset_dist = (self._user_offset.x()**2 + self._user_offset.y()**2)**0.5
+            if offset_dist > 15:  # Only show connector if label is far enough from anchor
+                # Draw thin connector line
+                connector_pen = QPen(color)
+                connector_pen.setWidth(1)
+                connector_pen.setStyle(Qt.DashLine)
+                painter.setPen(connector_pen)
+                painter.drawLine(0, 0, int(label_x), int(label_y))
+
+                # Draw small circle at anchor point (0,0)
+                painter.setBrush(pg.mkBrush(color))
+                painter.setPen(Qt.NoPen)
+                painter.drawEllipse(-3, -3, 6, 6)
+
+        # Draw label background (rounded rectangle)
+        bg_rect = pg.QtCore.QRectF(
+            label_x - text_width / 2,
+            label_y - text_height / 2,
+            text_width,
+            text_height
+        )
+
+        # Background with slight transparency
+        bg_color = QColor(0, 0, 0, 200)
+        painter.setBrush(pg.mkBrush(bg_color))
+        border_pen = QPen(color)
+        border_pen.setWidth(2)
+        painter.setPen(border_pen)
+        painter.drawRoundedRect(bg_rect, 4, 4)
+
+        # Draw text
+        painter.setPen(QPen(color))
+        painter.drawText(
+            int(label_x - text_rect.width() / 2),
+            int(label_y + text_rect.height() / 4),
+            self._text
+        )
+
+        # Draw drag handle indicator (small triangle at corner when hovered)
+        if self._is_dragging or self.isUnderMouse():
+            handle_size = 8
+            handle_x = label_x + text_width / 2 - handle_size - 2
+            handle_y = label_y + text_height / 2 - handle_size - 2
+
+            path = QPainterPath()
+            path.moveTo(handle_x + handle_size, handle_y)
+            path.lineTo(handle_x + handle_size, handle_y + handle_size)
+            path.lineTo(handle_x, handle_y + handle_size)
+            path.closeSubpath()
+
+            painter.setBrush(pg.mkBrush(color))
+            painter.setPen(Qt.NoPen)
+            painter.drawPath(path)
+
+    def hoverEnterEvent(self, event):
+        """Handle mouse hover enter."""
+        self.setCursor(Qt.OpenHandCursor)
+        self.update()
+
+    def hoverLeaveEvent(self, event):
+        """Handle mouse hover leave."""
+        self.setCursor(Qt.ArrowCursor)
+        self.update()
+
+    def mousePressEvent(self, event):
+        """Handle mouse press for dragging."""
+        if event.button() == Qt.LeftButton:
+            self._is_dragging = True
+            # Store offset from click position to label center
+            self._drag_offset = event.pos() - QPointF(self._user_offset.x(), self._user_offset.y())
+            self.setCursor(Qt.ClosedHandCursor)
+            event.accept()
+        else:
+            event.ignore()
+
+    def mouseMoveEvent(self, event):
+        """Handle mouse move for dragging."""
+        if self._is_dragging:
+            # Calculate new offset from anchor
+            new_offset = event.pos() - self._drag_offset
+            self._user_offset = QPointF(new_offset.x(), new_offset.y())
+            self.prepareGeometryChange()
+            self.update()
+            event.accept()
+        else:
+            event.ignore()
+
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release."""
+        if event.button() == Qt.LeftButton and self._is_dragging:
+            self._is_dragging = False
+            self.setCursor(Qt.OpenHandCursor)
+            event.accept()
+        else:
+            event.ignore()
+
+    def mouseDoubleClickEvent(self, event):
+        """Handle double-click to reset position."""
+        if event.button() == Qt.LeftButton:
+            self.reset_position()
+            event.accept()
+        else:
+            event.ignore()
 
 
 class ConstrainedLineSegmentROI(pg.LineSegmentROI):
@@ -268,6 +505,15 @@ class MeasurementOverlay(QObject):
         self.active_line_rois: List[pg.LineSegmentROI] = []
         self.measurement_id_counter = 0
 
+        # Dictionary mapping line ROI to its draggable label
+        self._line_labels: dict = {}  # {line_roi: DraggableDistanceLabel}
+
+        # Whether to show floating labels (can be toggled)
+        self._show_labels = True
+
+        # Current font size for labels
+        self._label_font_size = DraggableDistanceLabel.DEFAULT_FONT_SIZE
+
         # List of completed measurements (for backwards compatibility, rarely used now)
         self.completed_measurements: List[MeasurementLine] = []
 
@@ -360,11 +606,25 @@ class MeasurementOverlay(QObject):
         line_roi.setZValue(1000 + len(self.active_line_rois))
         self.active_line_rois.append(line_roi)
 
+        # Create draggable distance label for this line
+        label = DraggableDistanceLabel(color=color)
+        label.set_font_size(self._label_font_size)  # Use current font size setting
+        self.plot_item.addItem(label)
+        label.setZValue(1500 + len(self.active_line_rois))  # Above lines but below snap indicator
+        label.set_visible(self._show_labels)
+        self._line_labels[line_roi] = label
+
+        # Set initial label position at line midpoint
+        mid_x = (start_x + end_x) / 2
+        mid_y = (start_y + end_y) / 2
+        label.set_anchor_position(mid_x, mid_y)
+        label.reset_position()
+
         # Connect to ROI changes
         line_roi.sigRegionChanged.connect(lambda: self._on_line_changed(line_roi))
         line_roi.sigRegionChangeFinished.connect(lambda: self._on_line_change_finished(line_roi))
 
-        # Emit initial measurement
+        # Emit initial measurement and update label
         self._emit_measurement_data_for_roi(line_roi)
 
     def _on_line_changed(self, line_roi: pg.LineSegmentROI):
@@ -510,7 +770,29 @@ class MeasurementOverlay(QObject):
             calibration=cal_value
         )
 
+        # Update the draggable label for this line
+        if line_roi in self._line_labels:
+            label = self._line_labels[line_roi]
+            # Update anchor position to line midpoint
+            mid_x = (x1 + x2) / 2
+            mid_y = (y1 + y2) / 2
+            label.set_anchor_position(mid_x, mid_y)
+            # Update label text
+            label.set_text(self._format_distance_text(distance_px, distance_nm))
+
         self.measurement_created.emit(measurement_data)
+
+    def _format_distance_text(self, distance_px: float, distance_nm: Optional[float]) -> str:
+        """Format distance for display in label."""
+        if distance_nm is not None:
+            if distance_nm >= 1000:
+                return f"{distance_nm/1000:.2f} μm"
+            elif distance_nm >= 1:
+                return f"{distance_nm:.2f} nm"
+            else:
+                return f"{distance_nm:.3f} nm"
+        else:
+            return f"{distance_px:.1f} px"
 
     def set_snap_points(self, points: List[Tuple[float, float]]):
         """Set the snap points for magnetic snapping."""
@@ -537,12 +819,16 @@ class MeasurementOverlay(QObject):
     def clear_active(self):
         """Clear all active (uncommitted) measurement lines."""
         for line_roi in self.active_line_rois:
+            # Remove associated label
+            if line_roi in self._line_labels:
+                label = self._line_labels.pop(line_roi)
+                self.plot_item.removeItem(label)
             self.plot_item.removeItem(line_roi)
         self.active_line_rois.clear()
 
     def clear_all(self):
         """Clear all measurements (active and completed)."""
-        # Clear all active lines
+        # Clear all active lines (and their labels)
         self.clear_active()
 
         # Clear completed measurements
@@ -561,6 +847,10 @@ class MeasurementOverlay(QObject):
         # First remove from active ROIs if any exist
         if self.active_line_rois:
             last_roi = self.active_line_rois.pop()
+            # Remove associated label
+            if last_roi in self._line_labels:
+                label = self._line_labels.pop(last_roi)
+                self.plot_item.removeItem(label)
             self.plot_item.removeItem(last_roi)
             if self.color_index > 0:
                 self.color_index -= 1
@@ -601,3 +891,38 @@ class MeasurementOverlay(QObject):
         if calibration and hasattr(calibration, 'scale'):
             for m in self.completed_measurements:
                 m.set_calibration(calibration.scale)
+
+        # Update all active measurement labels
+        for line_roi in self.active_line_rois:
+            self._emit_measurement_data_for_roi(line_roi)
+
+    def set_labels_visible(self, visible: bool):
+        """Show or hide all floating distance labels."""
+        self._show_labels = visible
+        for label in self._line_labels.values():
+            label.set_visible(visible)
+
+    def toggle_labels(self) -> bool:
+        """Toggle label visibility and return new state."""
+        self._show_labels = not self._show_labels
+        self.set_labels_visible(self._show_labels)
+        return self._show_labels
+
+    def are_labels_visible(self) -> bool:
+        """Check if labels are currently visible."""
+        return self._show_labels
+
+    def reset_all_label_positions(self):
+        """Reset all labels to their default positions."""
+        for label in self._line_labels.values():
+            label.reset_position()
+
+    def set_label_font_size(self, size: int):
+        """Set font size for all labels (and future labels)."""
+        self._label_font_size = size
+        for label in self._line_labels.values():
+            label.set_font_size(size)
+
+    def get_label_font_size(self) -> int:
+        """Get the current label font size."""
+        return self._label_font_size
