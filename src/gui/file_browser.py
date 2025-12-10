@@ -161,10 +161,14 @@ class FileBrowserPanel(QWidget):
 
         # Configure columns
         self._tree_view.setHeaderHidden(False)
-        self._tree_view.header().setSectionResizeMode(0, QHeaderView.Stretch)
-        self._tree_view.header().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header = self._tree_view.header()
+        header.setSectionResizeMode(0, QHeaderView.Interactive)  # Name - draggable
+        header.setSectionResizeMode(1, QHeaderView.Interactive)  # Size - draggable
+        header.setStretchLastSection(True)  # Size column stretches to fill remaining space
         self._tree_view.setColumnHidden(2, True)  # Hide type column
         self._tree_view.setColumnHidden(3, True)  # Hide date column
+        # Set initial column width for Name
+        self._tree_view.setColumnWidth(0, 250)
 
         # Connect signals
         self._tree_view.clicked.connect(self._on_item_clicked)
