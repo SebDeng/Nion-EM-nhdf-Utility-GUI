@@ -83,6 +83,7 @@ class WorkspaceMainWindow(QMainWindow):
         self._measurement_toolbar.clear_all.connect(self._on_clear_measurements)
         self._measurement_toolbar.clear_last.connect(self._on_clear_last_measurement)
         self._measurement_toolbar.toggle_labels.connect(self._on_toggle_measurement_labels)
+        self._measurement_toolbar.font_size_changed.connect(self._on_measurement_font_size_changed)
         top_toolbar_layout.addWidget(self._measurement_toolbar, 1)  # Give stretch factor to fill space
 
         central_layout.addWidget(top_toolbar_widget)
@@ -956,6 +957,17 @@ class WorkspaceMainWindow(QMainWindow):
                         dp = panel.display_panel
                         if hasattr(dp, '_measurement_overlay') and dp._measurement_overlay:
                             dp._measurement_overlay.set_labels_visible(visible)
+
+    def _on_measurement_font_size_changed(self, size: int):
+        """Handle font size change from measurement toolbar."""
+        # Update font size for all display panels
+        if self._workspace:
+            for panel in self._workspace.panels:
+                if isinstance(panel, WorkspaceDisplayPanel):
+                    if hasattr(panel, 'display_panel') and panel.display_panel:
+                        dp = panel.display_panel
+                        if hasattr(dp, '_measurement_overlay') and dp._measurement_overlay:
+                            dp._measurement_overlay.set_label_font_size(size)
 
     def _on_clear_analysis(self):
         """Handle clear analysis request."""

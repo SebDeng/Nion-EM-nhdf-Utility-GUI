@@ -73,6 +73,9 @@ class DraggableDistanceLabel(pg.GraphicsObject):
     back to the measurement line's midpoint.
     """
 
+    # Default font size
+    DEFAULT_FONT_SIZE = 12
+
     def __init__(self, color: str = 'lime', parent=None):
         super().__init__(parent)
         self._color = color
@@ -83,7 +86,8 @@ class DraggableDistanceLabel(pg.GraphicsObject):
         self._drag_offset = QPointF(0, 0)
         self._user_offset = QPointF(0, 0)  # User's drag offset from anchor
         self._visible = True
-        self._font = QFont("Arial", 10, QFont.Bold)
+        self._font_size = self.DEFAULT_FONT_SIZE
+        self._font = QFont("Arial", self._font_size, QFont.Bold)
         self._padding = 6
         self._show_connector = True  # Show line from label to anchor
 
@@ -91,6 +95,9 @@ class DraggableDistanceLabel(pg.GraphicsObject):
         self.setFlag(QGraphicsItem.ItemIsMovable, False)  # We handle movement manually
         self.setAcceptHoverEvents(True)
         self.setAcceptedMouseButtons(Qt.LeftButton)
+
+        # Important: Ignore transformations so text doesn't flip with image
+        self.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
 
     def set_text(self, text: str):
         """Set the distance text to display."""
@@ -103,16 +110,18 @@ class DraggableDistanceLabel(pg.GraphicsObject):
         self.update()
 
     def set_anchor_position(self, x: float, y: float):
-        """Set the anchor position (measurement line midpoint)."""
+        """Set the anchor position (measurement line midpoint) in item coordinates."""
         self._anchor_pos = QPointF(x, y)
         # Update label position based on anchor + user offset
         self._label_pos = self._anchor_pos + self._user_offset
+        # Move the item to the anchor position (for ItemIgnoresTransformations)
+        self.setPos(self._anchor_pos)
         self.prepareGeometryChange()
         self.update()
 
     def reset_position(self):
         """Reset label to default position (at anchor with small offset)."""
-        self._user_offset = QPointF(20, -20)  # Default offset above and to the right
+        self._user_offset = QPointF(30, -30)  # Default offset above and to the right (in screen pixels)
         self._label_pos = self._anchor_pos + self._user_offset
         self.prepareGeometryChange()
         self.update()
@@ -131,6 +140,17 @@ class DraggableDistanceLabel(pg.GraphicsObject):
         self._show_connector = show
         self.update()
 
+    def set_font_size(self, size: int):
+        """Set the font size for the label."""
+        self._font_size = max(8, min(32, size))  # Clamp between 8 and 32
+        self._font = QFont("Arial", self._font_size, QFont.Bold)
+        self.prepareGeometryChange()
+        self.update()
+
+    def get_font_size(self) -> int:
+        """Get the current font size."""
+        return self._font_size
+
     def boundingRect(self):
         """Return bounding rectangle encompassing label and connector."""
         if not self._visible:
@@ -142,15 +162,19 @@ class DraggableDistanceLabel(pg.GraphicsObject):
         text_width = text_rect.width() + self._padding * 2
         text_height = text_rect.height() + self._padding * 2
 
-        # Label rectangle
-        label_left = self._label_pos.x() - text_width / 2
-        label_top = self._label_pos.y() - text_height / 2
+        # With ItemIgnoresTransformations, we work in screen coordinates relative to anchor (0,0)
+        offset_x = self._user_offset.x()
+        offset_y = self._user_offset.y()
 
-        # Include anchor point and connector in bounds
-        min_x = min(label_left, self._anchor_pos.x()) - 5
-        min_y = min(label_top, self._anchor_pos.y()) - 5
-        max_x = max(label_left + text_width, self._anchor_pos.x()) + 5
-        max_y = max(label_top + text_height, self._anchor_pos.y()) + 5
+        # Label rectangle relative to anchor
+        label_left = offset_x - text_width / 2
+        label_top = offset_y - text_height / 2
+
+        # Include anchor point (0,0) and connector in bounds
+        min_x = min(label_left, 0) - 10
+        min_y = min(label_top, 0) - 10
+        max_x = max(label_left + text_width, 0) + 10
+        max_y = max(label_top + text_height, 0) + 10
 
         return pg.QtCore.QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
 
@@ -168,29 +192,25 @@ class DraggableDistanceLabel(pg.GraphicsObject):
         text_width = text_rect.width() + self._padding * 2
         text_height = text_rect.height() + self._padding * 2
 
-        label_x = self._label_pos.x()
-        label_y = self._label_pos.y()
+        # With ItemIgnoresTransformations, anchor is at (0,0), label is at user_offset
+        label_x = self._user_offset.x()
+        label_y = self._user_offset.y()
 
-        # Draw connector line from anchor to label (if offset from anchor)
+        # Draw connector line from anchor (0,0) to label
         if self._show_connector:
             offset_dist = (self._user_offset.x()**2 + self._user_offset.y()**2)**0.5
-            if offset_dist > 10:  # Only show connector if label is far enough from anchor
+            if offset_dist > 15:  # Only show connector if label is far enough from anchor
                 # Draw thin connector line
                 connector_pen = QPen(color)
                 connector_pen.setWidth(1)
                 connector_pen.setStyle(Qt.DashLine)
                 painter.setPen(connector_pen)
-                painter.drawLine(
-                    int(self._anchor_pos.x()), int(self._anchor_pos.y()),
-                    int(label_x), int(label_y)
-                )
-                # Draw small circle at anchor point
+                painter.drawLine(0, 0, int(label_x), int(label_y))
+
+                # Draw small circle at anchor point (0,0)
                 painter.setBrush(pg.mkBrush(color))
                 painter.setPen(Qt.NoPen)
-                painter.drawEllipse(
-                    int(self._anchor_pos.x() - 3), int(self._anchor_pos.y() - 3),
-                    6, 6
-                )
+                painter.drawEllipse(-3, -3, 6, 6)
 
         # Draw label background (rounded rectangle)
         bg_rect = pg.QtCore.QRectF(
@@ -246,7 +266,8 @@ class DraggableDistanceLabel(pg.GraphicsObject):
         """Handle mouse press for dragging."""
         if event.button() == Qt.LeftButton:
             self._is_dragging = True
-            self._drag_offset = event.pos() - self._label_pos
+            # Store offset from click position to label center
+            self._drag_offset = event.pos() - QPointF(self._user_offset.x(), self._user_offset.y())
             self.setCursor(Qt.ClosedHandCursor)
             event.accept()
         else:
@@ -255,9 +276,9 @@ class DraggableDistanceLabel(pg.GraphicsObject):
     def mouseMoveEvent(self, event):
         """Handle mouse move for dragging."""
         if self._is_dragging:
-            new_pos = event.pos() - self._drag_offset
-            self._user_offset = new_pos - self._anchor_pos
-            self._label_pos = new_pos
+            # Calculate new offset from anchor
+            new_offset = event.pos() - self._drag_offset
+            self._user_offset = QPointF(new_offset.x(), new_offset.y())
             self.prepareGeometryChange()
             self.update()
             event.accept()
@@ -490,6 +511,9 @@ class MeasurementOverlay(QObject):
         # Whether to show floating labels (can be toggled)
         self._show_labels = True
 
+        # Current font size for labels
+        self._label_font_size = DraggableDistanceLabel.DEFAULT_FONT_SIZE
+
         # List of completed measurements (for backwards compatibility, rarely used now)
         self.completed_measurements: List[MeasurementLine] = []
 
@@ -584,6 +608,7 @@ class MeasurementOverlay(QObject):
 
         # Create draggable distance label for this line
         label = DraggableDistanceLabel(color=color)
+        label.set_font_size(self._label_font_size)  # Use current font size setting
         self.plot_item.addItem(label)
         label.setZValue(1500 + len(self.active_line_rois))  # Above lines but below snap indicator
         label.set_visible(self._show_labels)
@@ -891,3 +916,13 @@ class MeasurementOverlay(QObject):
         """Reset all labels to their default positions."""
         for label in self._line_labels.values():
             label.reset_position()
+
+    def set_label_font_size(self, size: int):
+        """Set font size for all labels (and future labels)."""
+        self._label_font_size = size
+        for label in self._line_labels.values():
+            label.set_font_size(size)
+
+    def get_label_font_size(self) -> int:
+        """Get the current label font size."""
+        return self._label_font_size
