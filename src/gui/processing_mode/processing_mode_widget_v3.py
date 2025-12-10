@@ -17,6 +17,7 @@ from src.core.nhdf_reader import NHDFData, read_em_file
 from .processing_controls import ProcessingControlsPanel
 from .processing_engine import ProcessingEngine, ProcessingState
 from .node_graph_widget import NodeGraphWidget
+from .processing_export import ProcessingExportDialog
 
 
 class SnapshotPanel(QFrame):
@@ -25,6 +26,7 @@ class SnapshotPanel(QFrame):
     load_requested = Signal(str)  # snapshot_id
     compare_requested = Signal(str)  # snapshot_id
     delete_requested = Signal(str)  # snapshot_id
+    export_requested = Signal(str)  # snapshot_id
 
     def __init__(self, snapshot: ProcessingState, parent=None):
         super().__init__(parent)
@@ -101,6 +103,11 @@ class SnapshotPanel(QFrame):
         compare_btn = QPushButton("Compare")
         compare_btn.clicked.connect(lambda: self.compare_requested.emit(self.snapshot.id))
         btn_layout.addWidget(compare_btn)
+
+        export_btn = QPushButton("Export")
+        export_btn.setToolTip("Export this snapshot")
+        export_btn.clicked.connect(lambda: self.export_requested.emit(self.snapshot.id))
+        btn_layout.addWidget(export_btn)
 
         layout.addLayout(btn_layout)
 
@@ -309,6 +316,14 @@ class ProcessingModeWidgetV3(QWidget):
         layout.addWidget(self.file_label)
 
         layout.addStretch()
+
+        # Export button
+        self.export_btn = QPushButton("Export All...")
+        self.export_btn.setMinimumWidth(100)
+        self.export_btn.setToolTip("Export processed data from all snapshots")
+        self.export_btn.clicked.connect(self._show_export_dialog)
+        self.export_btn.setEnabled(False)
+        layout.addWidget(self.export_btn)
 
         # Processing status
         self.status_label = QLabel("")
@@ -555,11 +570,15 @@ class ProcessingModeWidgetV3(QWidget):
         panel.load_requested.connect(self._load_snapshot)
         panel.compare_requested.connect(self._compare_snapshot)
         panel.delete_requested.connect(self._delete_snapshot)
+        panel.export_requested.connect(self._export_single_snapshot)
 
         # Add to horizontal splitter
         self.snapshots_splitter.addWidget(panel)
 
         self.snapshot_panels.append(panel)
+
+        # Enable export button when we have snapshots
+        self.export_btn.setEnabled(True)
 
     def _load_snapshot(self, snapshot_id: str):
         """Load a snapshot."""
@@ -593,6 +612,9 @@ class ProcessingModeWidgetV3(QWidget):
             panel.deleteLater()
 
         self.snapshot_panels.clear()
+
+        # Disable export button when no snapshots
+        self.export_btn.setEnabled(False)
 
     def _reset_to_original(self):
         """Reset to original image and clear all processing."""
@@ -742,3 +764,61 @@ class ProcessingModeWidgetV3(QWidget):
         # Update snapshot panels
         for panel in self.snapshot_panels:
             panel.image_view.view.setBackgroundColor(bg_color)
+
+    def _get_scale_info(self):
+        """Get scale information from the loaded data."""
+        if not self.nhdf_data:
+            return None
+
+        # Get calibration from the data
+        calibrations = self.nhdf_data.dimensional_calibrations
+        if calibrations and len(calibrations) >= 2:
+            x_cal = calibrations[-1]
+            if x_cal and hasattr(x_cal, 'scale') and x_cal.scale > 0:
+                scale = x_cal.scale
+                unit = x_cal.units if hasattr(x_cal, 'units') and x_cal.units else 'px'
+
+                # Get image dimensions
+                frame_shape = self.nhdf_data.frame_shape
+                height, width = frame_shape if len(frame_shape) == 2 else (frame_shape[0], frame_shape[1])
+
+                return (scale, unit, width, height)
+        return None
+
+    def _show_export_dialog(self, preselected_id: str = None):
+        """Show the export dialog for all snapshots."""
+        if not self.engine.states:
+            QMessageBox.information(
+                self, "No Snapshots",
+                "Create some snapshots first before exporting."
+            )
+            return
+
+        # Get scale info
+        scale_info = self._get_scale_info()
+
+        # Get original file path
+        import pathlib
+        file_path = pathlib.Path(self.current_file) if self.current_file else None
+
+        # Create dialog
+        dialog = ProcessingExportDialog(
+            snapshots=self.engine.states,
+            original_file_path=file_path,
+            scale_info=scale_info,
+            parent=self
+        )
+
+        # If preselected, only check that one
+        if preselected_id:
+            for item in dialog._snapshot_items:
+                if item.snapshot.id == preselected_id:
+                    item.checkbox.setChecked(True)
+                else:
+                    item.checkbox.setChecked(False)
+
+        dialog.exec()
+
+    def _export_single_snapshot(self, snapshot_id: str):
+        """Export a single snapshot."""
+        self._show_export_dialog(preselected_id=snapshot_id)

@@ -25,6 +25,8 @@ def compute_param_diff(parent_params: Dict, child_params: Dict) -> Dict:
         'brightness': 0,
         'contrast': 1.0,
         'gamma': 1.0,
+        'local_norm_enabled': False,
+        'local_norm_block_size': 45,
         'gaussian_enabled': False,
         'gaussian_sigma': 0,
         'median_enabled': False,
@@ -35,6 +37,10 @@ def compute_param_diff(parent_params: Dict, child_params: Dict) -> Dict:
         'bandpass_enabled': False,
         'bandpass_large': 40,
         'bandpass_small': 3,
+        'rolling_ball_enabled': False,
+        'rolling_ball_radius': 50,
+        'rolling_ball_light_bg': False,
+        'rolling_ball_create_bg': False,
     }
 
     # All possible parameter keys
@@ -79,6 +85,10 @@ def get_edge_label(parent_params: Dict, child_params: Dict) -> str:
         if val != 1.0:
             parts.append(f"γ{val:.1f}")
 
+    # Local Normalization
+    if diff.get('local_norm_enabled', {}).get('to', False):
+        parts.append("LN")
+
     # Filters - single letter only
     if diff.get('gaussian_enabled', {}).get('to', False):
         parts.append("G")
@@ -88,6 +98,8 @@ def get_edge_label(parent_params: Dict, child_params: Dict) -> str:
         parts.append("U")
     if diff.get('bandpass_enabled', {}).get('to', False):
         parts.append("BP")
+    if diff.get('rolling_ball_enabled', {}).get('to', False):
+        parts.append("RB")
 
     # Limit to max 3 items to keep compact
     if len(parts) > 3:
@@ -121,6 +133,13 @@ def format_diff_for_details(parent_params: Dict, child_params: Dict, parent_name
         to_val = diff['gamma']['to']
         lines.append(f"Gamma: {from_val:.2f} → {to_val:.2f}")
 
+    # Local Normalization
+    if diff.get('local_norm_enabled', {}).get('to', False):
+        block_size = child_params.get('local_norm_block_size', 45)
+        lines.append(f"+ Local Normalization (block={block_size}px)")
+    elif diff.get('local_norm_enabled', {}).get('from', False):
+        lines.append("- Local Normalization (disabled)")
+
     # Filters
     if diff.get('gaussian_enabled', {}).get('to', False):
         sigma = child_params.get('gaussian_sigma', 0)
@@ -147,6 +166,16 @@ def format_diff_for_details(parent_params: Dict, child_params: Dict, parent_name
         lines.append(f"+ Bandpass Filter ({small}-{large}px)")
     elif diff.get('bandpass_enabled', {}).get('from', False):
         lines.append("- Bandpass Filter (disabled)")
+
+    if diff.get('rolling_ball_enabled', {}).get('to', False):
+        radius = child_params.get('rolling_ball_radius', 50)
+        light_bg = child_params.get('rolling_ball_light_bg', False)
+        create_bg = child_params.get('rolling_ball_create_bg', False)
+        bg_mode = "light bg" if light_bg else "dark bg"
+        output = "→background" if create_bg else "→subtracted"
+        lines.append(f"+ Rolling Ball (r={radius}px, {bg_mode}, {output})")
+    elif diff.get('rolling_ball_enabled', {}).get('from', False):
+        lines.append("- Rolling Ball (disabled)")
 
     return "\n".join(lines)
 
@@ -507,12 +536,35 @@ class NodeGraphCanvas(QWidget):
                 node = self.nodes[node_id]
                 tooltip = f"{node.name}"
                 if node.params:
+                    # Basic adjustments
                     if node.params.get('brightness', 0) != 0:
                         tooltip += f"\nBrightness: {node.params['brightness']}"
                     if node.params.get('contrast', 1.0) != 1.0:
                         tooltip += f"\nContrast: {node.params['contrast']:.2f}"
                     if node.params.get('gamma', 1.0) != 1.0:
                         tooltip += f"\nGamma: {node.params['gamma']:.2f}"
+                    # Local Normalization
+                    if node.params.get('local_norm_enabled', False):
+                        block_size = node.params.get('local_norm_block_size', 45)
+                        tooltip += f"\nLocal Norm: {block_size}px"
+                    # Filters
+                    if node.params.get('gaussian_enabled', False):
+                        sigma = node.params.get('gaussian_sigma', 0)
+                        tooltip += f"\nGaussian: σ={sigma}px"
+                    if node.params.get('median_enabled', False):
+                        size = node.params.get('median_size', 3)
+                        tooltip += f"\nMedian: {size}px"
+                    if node.params.get('unsharp_enabled', False):
+                        amt = node.params.get('unsharp_amount', 0.5)
+                        rad = node.params.get('unsharp_radius', 1.0)
+                        tooltip += f"\nUnsharp: amt={amt:.1f}, r={rad}"
+                    if node.params.get('bandpass_enabled', False):
+                        large = node.params.get('bandpass_large', 40)
+                        small = node.params.get('bandpass_small', 3)
+                        tooltip += f"\nBandpass: {small}-{large}px"
+                    if node.params.get('rolling_ball_enabled', False):
+                        radius = node.params.get('rolling_ball_radius', 50)
+                        tooltip += f"\nRolling Ball: {radius}px"
                 self.setToolTip(tooltip)
             else:
                 self.setToolTip("")

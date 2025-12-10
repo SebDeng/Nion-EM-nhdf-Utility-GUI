@@ -166,6 +166,41 @@ class ProcessingControlsPanel(QWidget):
 
         layout.addWidget(gamma_group)
 
+        # Local Normalization control
+        local_norm_group = QGroupBox("Local Normalization")
+        local_norm_layout = QGridLayout(local_norm_group)
+        local_norm_layout.setColumnStretch(2, 1)
+
+        self.local_norm_check = QCheckBox("Enable")
+        self.local_norm_check.setToolTip("Normalize intensity within local blocks to equalize contrast across the image")
+        local_norm_layout.addWidget(self.local_norm_check, 0, 0, 1, 3)
+
+        # Block size control
+        local_norm_layout.addWidget(QLabel("Block size:"), 1, 0)
+        self.local_norm_block_size = QSpinBox()
+        self.local_norm_block_size.setRange(8, 256)
+        self.local_norm_block_size.setValue(45)
+        self.local_norm_block_size.setSingleStep(5)
+        self.local_norm_block_size.setEnabled(False)
+        self.local_norm_block_size.setSuffix(" px")
+        self.local_norm_block_size.setMinimumWidth(80)
+        self.local_norm_block_size.setToolTip("Size of blocks for local normalization (larger = smoother)")
+        local_norm_layout.addWidget(self.local_norm_block_size, 1, 1)
+
+        # Physical unit display for block size
+        self.local_norm_nm_label = QLabel("= ? nm")
+        self.local_norm_nm_label.setStyleSheet("QLabel { color: #888; }")
+        self.local_norm_nm_label.setToolTip("Equivalent size in physical units")
+        local_norm_layout.addWidget(self.local_norm_nm_label, 1, 2)
+
+        # Connect signals
+        self.local_norm_check.toggled.connect(self.local_norm_block_size.setEnabled)
+        self.local_norm_check.toggled.connect(self._on_adjustment_changed)
+        self.local_norm_block_size.valueChanged.connect(self._on_adjustment_changed)
+        self.local_norm_block_size.valueChanged.connect(self._update_local_norm_nm_label)
+
+        layout.addWidget(local_norm_group)
+
         layout.addStretch()
 
         return widget
@@ -301,11 +336,62 @@ class ProcessingControlsPanel(QWidget):
         return widget
 
     def _create_advanced_tab(self) -> QWidget:
-        """Create the advanced processing tab with ImageJ-style bandpass filter."""
+        """Create the advanced processing tab with ImageJ-style filters."""
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(5)
+
+        # Rolling Ball Background Subtraction (ImageJ-style)
+        rolling_ball_group = QGroupBox("Rolling Ball Background Subtraction")
+        rolling_ball_layout = QGridLayout(rolling_ball_group)
+        rolling_ball_layout.setColumnStretch(2, 1)
+
+        # Enable checkbox
+        self.rolling_ball_check = QCheckBox("Enable")
+        self.rolling_ball_check.setToolTip("Subtract background using ImageJ-style rolling ball algorithm")
+        rolling_ball_layout.addWidget(self.rolling_ball_check, 0, 0, 1, 3)
+
+        # Ball radius
+        rolling_ball_layout.addWidget(QLabel("Radius:"), 1, 0)
+        self.rolling_ball_radius = QSpinBox()
+        self.rolling_ball_radius.setRange(1, 500)
+        self.rolling_ball_radius.setValue(50)
+        self.rolling_ball_radius.setEnabled(False)
+        self.rolling_ball_radius.setToolTip("Rolling ball radius in pixels (larger = smoother background)")
+        self.rolling_ball_radius.setSuffix(" px")
+        self.rolling_ball_radius.setMinimumWidth(80)
+        rolling_ball_layout.addWidget(self.rolling_ball_radius, 1, 1)
+
+        # Physical unit display for radius
+        self.rolling_ball_nm_label = QLabel("= ? nm")
+        self.rolling_ball_nm_label.setStyleSheet("QLabel { color: #888; }")
+        self.rolling_ball_nm_label.setToolTip("Equivalent size in physical units")
+        rolling_ball_layout.addWidget(self.rolling_ball_nm_label, 1, 2)
+
+        # Light background checkbox (for images with light background)
+        self.rolling_ball_light_bg = QCheckBox("Light background")
+        self.rolling_ball_light_bg.setChecked(False)
+        self.rolling_ball_light_bg.setEnabled(False)
+        self.rolling_ball_light_bg.setToolTip("Check if image has light background (inverts algorithm)")
+        rolling_ball_layout.addWidget(self.rolling_ball_light_bg, 2, 0, 1, 3)
+
+        # Create background only checkbox
+        self.rolling_ball_create_bg = QCheckBox("Create background (don't subtract)")
+        self.rolling_ball_create_bg.setChecked(False)
+        self.rolling_ball_create_bg.setEnabled(False)
+        self.rolling_ball_create_bg.setToolTip("Output the estimated background instead of subtracting it")
+        rolling_ball_layout.addWidget(self.rolling_ball_create_bg, 3, 0, 1, 3)
+
+        layout.addWidget(rolling_ball_group)
+
+        # Connect signals for rolling ball
+        self.rolling_ball_check.toggled.connect(self._on_rolling_ball_toggled)
+        self.rolling_ball_check.toggled.connect(self._update_advanced_button)
+        self.rolling_ball_radius.valueChanged.connect(self._on_advanced_changed)
+        self.rolling_ball_radius.valueChanged.connect(self._update_rolling_ball_nm_label)
+        self.rolling_ball_light_bg.toggled.connect(self._on_advanced_changed)
+        self.rolling_ball_create_bg.toggled.connect(self._on_advanced_changed)
 
         # Bandpass Filter (ImageJ-style)
         bandpass_group = QGroupBox("FFT Bandpass Filter (ImageJ-style)")
@@ -398,6 +484,12 @@ class ProcessingControlsPanel(QWidget):
 
         return widget
 
+    def _on_rolling_ball_toggled(self, enabled: bool):
+        """Handle rolling ball enable/disable."""
+        self.rolling_ball_radius.setEnabled(enabled)
+        self.rolling_ball_light_bg.setEnabled(enabled)
+        self.rolling_ball_create_bg.setEnabled(enabled)
+
     def _on_bandpass_toggled(self, enabled: bool):
         """Handle bandpass filter enable/disable."""
         self.bandpass_large.setEnabled(enabled)
@@ -409,7 +501,10 @@ class ProcessingControlsPanel(QWidget):
 
     def _update_advanced_button(self):
         """Update the state of the apply advanced button."""
-        any_advanced_enabled = self.bandpass_check.isChecked()
+        any_advanced_enabled = (
+            self.rolling_ball_check.isChecked() or
+            self.bandpass_check.isChecked()
+        )
         self.apply_advanced_btn.setEnabled(any_advanced_enabled)
 
     def _on_advanced_changed(self):
@@ -553,6 +648,18 @@ class ProcessingControlsPanel(QWidget):
             self.bandpass_autoscale.setChecked(True)
             self.bandpass_saturate.setChecked(False)
 
+        # Reset rolling ball background subtraction
+        if hasattr(self, 'rolling_ball_check'):
+            self.rolling_ball_check.setChecked(False)
+            self.rolling_ball_radius.setValue(50)
+            self.rolling_ball_light_bg.setChecked(False)
+            self.rolling_ball_create_bg.setChecked(False)
+
+        # Reset local normalization
+        if hasattr(self, 'local_norm_check'):
+            self.local_norm_check.setChecked(False)
+            self.local_norm_block_size.setValue(45)
+
         # Emit reset signal to trigger processing reset
         self.reset_requested.emit()
 
@@ -589,6 +696,18 @@ class ProcessingControlsPanel(QWidget):
             params['bandpass_autoscale'] = self.bandpass_autoscale.isChecked()
             params['bandpass_saturate'] = self.bandpass_saturate.isChecked()
 
+        # Add rolling ball background subtraction parameters
+        if hasattr(self, 'rolling_ball_check') and self.rolling_ball_check.isChecked():
+            params['rolling_ball_enabled'] = True
+            params['rolling_ball_radius'] = self.rolling_ball_radius.value()
+            params['rolling_ball_light_bg'] = self.rolling_ball_light_bg.isChecked()
+            params['rolling_ball_create_bg'] = self.rolling_ball_create_bg.isChecked()
+
+        # Add local normalization parameters
+        if hasattr(self, 'local_norm_check') and self.local_norm_check.isChecked():
+            params['local_norm_enabled'] = True
+            params['local_norm_block_size'] = self.local_norm_block_size.value()
+
         return params
 
     def set_pixel_scale(self, scale_nm: float, unit: str = "nm"):
@@ -607,6 +726,8 @@ class ProcessingControlsPanel(QWidget):
         self._update_median_nm_label()
         self._update_unsharp_nm_label()
         self._update_bandpass_nm_labels()
+        self._update_rolling_ball_nm_label()
+        self._update_local_norm_nm_label()
 
     def _format_physical_value(self, pixels: float) -> str:
         """Format a pixel value as physical units."""
@@ -653,3 +774,17 @@ class ProcessingControlsPanel(QWidget):
         if hasattr(self, 'bandpass_large'):
             # These are already in pixels, convert to physical units
             pass  # Bandpass filter sizes are structure sizes, not kernel sizes
+
+    def _update_rolling_ball_nm_label(self):
+        """Update the Rolling Ball radius nm label."""
+        if hasattr(self, 'rolling_ball_nm_label'):
+            self.rolling_ball_nm_label.setText(
+                self._format_physical_value(self.rolling_ball_radius.value())
+            )
+
+    def _update_local_norm_nm_label(self):
+        """Update the Local Normalization block size nm label."""
+        if hasattr(self, 'local_norm_nm_label'):
+            self.local_norm_nm_label.setText(
+                self._format_physical_value(self.local_norm_block_size.value())
+            )

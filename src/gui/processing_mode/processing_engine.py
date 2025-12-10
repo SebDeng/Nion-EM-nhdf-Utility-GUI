@@ -160,6 +160,12 @@ class ProcessingEngine:
                 # Scale back to original range
                 result = normalized * (current_max - current_min) + current_min
 
+        # === Local Normalization ===
+        # Normalize intensity within local blocks to equalize contrast
+        if params.get('local_norm_enabled'):
+            block_size = params.get('local_norm_block_size', 45)
+            result = self._apply_local_normalization(result, block_size)
+
         # Apply filters (ImageJ-style)
         result = self._apply_filters(result, params)
 
@@ -219,6 +225,16 @@ class ProcessingEngine:
                 tolerance=params.get('bandpass_tolerance', 5),
                 autoscale=params.get('bandpass_autoscale', True),
                 saturate=params.get('bandpass_saturate', False)
+            )
+
+        # === ImageJ Rolling Ball Background Subtraction ===
+        # ImageJ: Process > Subtract Background
+        if params.get('rolling_ball_enabled'):
+            result = self._apply_rolling_ball_background(
+                result,
+                radius=params.get('rolling_ball_radius', 50),
+                light_background=params.get('rolling_ball_light_bg', False),
+                create_background=params.get('rolling_ball_create_bg', False)
             )
 
         return result
@@ -352,6 +368,177 @@ class ProcessingEngine:
 
                 if saturate:
                     result = np.clip(result, orig_min, orig_max)
+
+        return result
+
+    def _apply_rolling_ball_background(self, image: np.ndarray,
+                                        radius: int = 50,
+                                        light_background: bool = False,
+                                        create_background: bool = False) -> np.ndarray:
+        """
+        Apply ImageJ-style Rolling Ball Background Subtraction.
+
+        This replicates ImageJ's Process > Subtract Background algorithm.
+        The rolling ball algorithm was introduced by Stanley Sternberg in 1983.
+
+        The algorithm simulates rolling a ball underneath (or above for light backgrounds)
+        the image surface to estimate the background.
+
+        Args:
+            image: Input 2D image
+            radius: Rolling ball radius in pixels (larger = smoother background)
+            light_background: If True, assumes light background (inverts algorithm)
+            create_background: If True, returns the background instead of subtracting it
+
+        Returns:
+            Background-subtracted image (or background if create_background=True)
+        """
+        from scipy import ndimage
+        from scipy.ndimage import minimum_filter, maximum_filter, zoom
+
+        rows, cols = image.shape
+        result = image.astype(np.float64)
+
+        # For light backgrounds, invert the image first
+        if light_background:
+            img_min = np.min(result)
+            img_max = np.max(result)
+            result = img_max + img_min - result  # Invert around center
+
+        # ImageJ's optimized rolling ball algorithm:
+        # 1. Shrink the image to speed up processing
+        # 2. Roll the ball on the shrunk image
+        # 3. Expand back and interpolate
+
+        # Calculate shrink factor (ImageJ uses this optimization)
+        # For radius > 10, shrink to speed up processing
+        shrink_factor = max(1, radius // 10)
+
+        if shrink_factor > 1:
+            # Shrink image using block minimum (faster vectorized approach)
+            small_rows = rows // shrink_factor
+            small_cols = cols // shrink_factor
+
+            # Reshape for block processing
+            trimmed = result[:small_rows * shrink_factor, :small_cols * shrink_factor]
+            reshaped = trimmed.reshape(small_rows, shrink_factor, small_cols, shrink_factor)
+            small_image = reshaped.min(axis=(1, 3))
+
+            # Adjusted radius for shrunk image
+            small_radius = max(1, radius // shrink_factor)
+        else:
+            small_image = result.copy()
+            small_rows, small_cols = rows, cols
+            small_radius = radius
+
+        # Create ball structure (paraboloid approximation)
+        # The ball is a paraboloid: z = dist^2 / (2*r)
+        ball_width = 2 * small_radius + 1
+        y, x = np.ogrid[:ball_width, :ball_width]
+        x = x - small_radius
+        y = y - small_radius
+        dist_sq = (x * x + y * y).astype(np.float64)
+
+        # Create paraboloid ball (ImageJ's approximation)
+        # Height increases as we move away from center
+        ball = np.where(
+            dist_sq <= small_radius * small_radius,
+            dist_sq / (2.0 * small_radius),
+            np.inf  # Outside the ball - will be ignored
+        )
+
+        # Rolling ball: We want to find the minimum of (image - ball_offset) at each position
+        # This is equivalent to a local minimum filter with the ball shape subtracted
+
+        # Simplified approach: Use morphological opening with a disk footprint
+        # and then smooth to approximate the paraboloid effect
+
+        # Create circular footprint
+        footprint = dist_sq <= small_radius * small_radius
+
+        # Morphological opening = erosion followed by dilation
+        # This finds the "floor" where a flat disk can roll
+        eroded = minimum_filter(small_image, footprint=footprint, mode='reflect')
+        background_small = maximum_filter(eroded, footprint=footprint, mode='reflect')
+
+        # Apply additional smoothing to better approximate rolling ball
+        # The paraboloid shape creates smoother transitions than flat disk
+        smooth_size = max(3, small_radius // 2)
+        if smooth_size % 2 == 0:
+            smooth_size += 1
+        background_small = ndimage.uniform_filter(background_small, size=smooth_size)
+
+        # Expand background back to original size if shrunk
+        if shrink_factor > 1:
+            # Use bilinear interpolation to expand
+            zoom_factor_r = rows / small_rows
+            zoom_factor_c = cols / small_cols
+            background = zoom(background_small, (zoom_factor_r, zoom_factor_c), order=1)
+            # Ensure exact size match
+            background = background[:rows, :cols]
+        else:
+            background = background_small
+
+        # For light backgrounds, invert back
+        if light_background:
+            result = img_max + img_min - result
+            background = img_max + img_min - background
+
+        # Return background or subtract it
+        if create_background:
+            return background
+        else:
+            subtracted = result - background
+            return subtracted
+
+    def _apply_local_normalization(self, image: np.ndarray, block_size: int = 45) -> np.ndarray:
+        """
+        Apply local normalization to equalize contrast across the image.
+
+        Divides the image into blocks and normalizes each block independently
+        to have values in the range [0, 1]. This helps when different regions
+        of the image have very different intensity levels.
+
+        Args:
+            image: Input 2D image
+            block_size: Size of blocks in pixels (larger = smoother normalization)
+
+        Returns:
+            Locally normalized image with values scaled to original range
+        """
+        rows, cols = image.shape
+        result = np.zeros_like(image, dtype=np.float64)
+
+        # Store original range to scale output
+        orig_min = np.min(image)
+        orig_max = np.max(image)
+        orig_range = orig_max - orig_min if orig_max > orig_min else 1.0
+
+        # Process image in blocks
+        for y in range(0, rows, block_size):
+            for x in range(0, cols, block_size):
+                # Get block bounds (handle edge cases)
+                y_end = min(y + block_size, rows)
+                x_end = min(x + block_size, cols)
+
+                # Extract block
+                block = image[y:y_end, x:x_end].astype(np.float64)
+
+                # Normalize block to [0, 1]
+                block_min = np.min(block)
+                block_max = np.max(block)
+
+                if block_max > block_min:
+                    normalized_block = (block - block_min) / (block_max - block_min)
+                else:
+                    # Constant block - set to 0.5
+                    normalized_block = np.full_like(block, 0.5)
+
+                # Store normalized block
+                result[y:y_end, x:x_end] = normalized_block
+
+        # Scale back to original range
+        result = result * orig_range + orig_min
 
         return result
 
