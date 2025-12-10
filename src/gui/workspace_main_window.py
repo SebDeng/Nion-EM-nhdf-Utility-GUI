@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QApplication, QDialog, QLabel, QPushButton,
     QInputDialog
 )
-from PySide6.QtCore import Qt, Signal, QSettings
+from PySide6.QtCore import Qt, Signal, QSettings, QTimer
 from PySide6.QtGui import QAction, QKeySequence, QPixmap
 
 import pathlib
@@ -1226,8 +1226,9 @@ class WorkspaceMainWindow(QMainWindow):
             # Update histogram when data is loaded
             self._update_histogram_for_panel(panel)
             # Re-sync unified controls to update subscan checkbox state
-            # Use force_sync=True because the panel is the same but data changed
-            self._unified_controls.set_current_panel(panel, force_sync=True)
+            # Use QTimer.singleShot to defer sync until after Qt event loop processes
+            # This ensures the display panel has fully updated its state
+            QTimer.singleShot(0, lambda: self._unified_controls.set_current_panel(panel, force_sync=True))
 
         self._update_export_actions()
 
