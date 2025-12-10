@@ -1299,10 +1299,13 @@ class MeasurementOverlay(QObject):
         polygon_roi._polygon_color = color
         polygon_roi._polygon_id = self.measurement_id_counter
 
-        # Make handles more visible
+        # Make handles larger and more visible
         for handle in polygon_roi.getHandles():
+            handle.radius = 10  # Increase from default ~5 to 10
             handle.pen = pg.mkPen(qt_color, width=2)
             handle.brush = pg.mkBrush(qt_color)
+            handle.buildPath()  # Rebuild handle path with new radius
+            handle.update()
 
         # Add to plot
         self.plot_item.addItem(polygon_roi)
