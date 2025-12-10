@@ -247,6 +247,86 @@ class NHDFData:
         """Get the total exposure time in seconds."""
         return self.hardware_source.get("exposure")
 
+    @property
+    def pixel_size_nm(self) -> Optional[float]:
+        """Get the pixel size in nm (assumes square pixels)."""
+        if not self.is_2d_image:
+            return None
+
+        # Get spatial calibrations (skip sequence dimension if present)
+        spatial_cals = self.dimensional_calibrations
+        if self.data_descriptor.is_sequence and len(spatial_cals) > 2:
+            spatial_cals = spatial_cals[1:]
+
+        if len(spatial_cals) < 2:
+            return None
+
+        # Use the first spatial calibration (y dimension)
+        cal = spatial_cals[0]
+        if cal.units in ('nm', 'nanometer', 'nanometers'):
+            return abs(cal.scale)
+        elif cal.units in ('um', 'µm', 'micrometer', 'micrometers'):
+            return abs(cal.scale) * 1000  # Convert to nm
+        elif cal.units in ('m', 'meter', 'meters'):
+            return abs(cal.scale) * 1e9  # Convert to nm
+
+        # If no units, assume nm
+        return abs(cal.scale)
+
+    def calculate_electron_dose(self, probe_current_pA: float = 15.0) -> Optional[Dict[str, float]]:
+        """
+        Calculate electron dose and flux.
+
+        Args:
+            probe_current_pA: Probe current in picoamperes (default: 15 pA)
+
+        Returns:
+            Dictionary with dose calculations or None if data is insufficient.
+            Keys: 'dose_e_per_nm2', 'dose_e_per_A2', 'flux_e_per_nm2_s', 'flux_e_per_A2_s',
+                  'pixel_size_nm', 'pixel_time_us', 'electrons_per_pixel'
+        """
+        pixel_size_nm = self.pixel_size_nm
+        pixel_time_us = self.pixel_time_us
+
+        if pixel_size_nm is None or pixel_time_us is None:
+            return None
+
+        # Constants
+        e_charge = 1.602e-19  # Coulombs (electron charge)
+
+        # Convert units
+        probe_current_A = probe_current_pA * 1e-12  # pA to A
+        pixel_time_s = pixel_time_us * 1e-6  # µs to s
+        pixel_size_A = pixel_size_nm * 10  # nm to Å
+
+        # Calculate pixel area
+        pixel_area_nm2 = pixel_size_nm ** 2
+        pixel_area_A2 = pixel_size_A ** 2
+
+        # Calculate electrons per pixel
+        # electrons = (current [A] × time [s]) / e [C]
+        electrons_per_pixel = (probe_current_A * pixel_time_s) / e_charge
+
+        # Calculate dose (electrons per area)
+        dose_e_per_nm2 = electrons_per_pixel / pixel_area_nm2
+        dose_e_per_A2 = electrons_per_pixel / pixel_area_A2
+
+        # Calculate flux (dose rate)
+        # For a single frame, flux = dose / pixel_time
+        flux_e_per_nm2_s = dose_e_per_nm2 / pixel_time_s
+        flux_e_per_A2_s = dose_e_per_A2 / pixel_time_s
+
+        return {
+            'dose_e_per_nm2': dose_e_per_nm2,
+            'dose_e_per_A2': dose_e_per_A2,
+            'flux_e_per_nm2_s': flux_e_per_nm2_s,
+            'flux_e_per_A2_s': flux_e_per_A2_s,
+            'pixel_size_nm': pixel_size_nm,
+            'pixel_time_us': pixel_time_us,
+            'electrons_per_pixel': electrons_per_pixel,
+            'probe_current_pA': probe_current_pA
+        }
+
 
 class NHDFReader:
     """Reader for Nion nhdf files."""

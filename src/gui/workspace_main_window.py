@@ -30,6 +30,7 @@ from src.gui.mode_manager import ModeManager
 from src.gui.preview_mode import AnalysisToolBar
 from src.gui.preview_mode.analysis_panel import AnalysisResultsPanel
 from src.gui.measurement_toolbar import MeasurementToolBar
+from src.gui.dose_calculator import DoseCalculatorDialog
 
 
 class WorkspaceMainWindow(QMainWindow):
@@ -305,6 +306,14 @@ class WorkspaceMainWindow(QMainWindow):
         send_to_processing_action.setEnabled(False)
         self._send_to_processing_action = send_to_processing_action
         process_menu.addAction(send_to_processing_action)
+
+        # Tools menu
+        tools_menu = menubar.addMenu("&Tools")
+
+        dose_calc_action = QAction("&Electron Dose Calculator...", self)
+        dose_calc_action.setShortcut(QKeySequence("Ctrl+D"))
+        dose_calc_action.triggered.connect(self._on_show_dose_calculator)
+        tools_menu.addAction(dose_calc_action)
 
         # Export menu
         export_menu = menubar.addMenu("&Export")
@@ -1533,6 +1542,16 @@ class WorkspaceMainWindow(QMainWindow):
             "Export All",
             "Batch export for all panels will be implemented soon."
         )
+
+    def _on_show_dose_calculator(self):
+        """Show the electron dose calculator dialog."""
+        # Get current data from selected panel
+        current_data = None
+        if isinstance(self._workspace.selected_panel, WorkspaceDisplayPanel):
+            current_data = self._workspace.selected_panel.current_data
+
+        dialog = DoseCalculatorDialog(current_data, parent=self)
+        dialog.exec()
 
     def _on_about(self):
         """Show about dialog."""
