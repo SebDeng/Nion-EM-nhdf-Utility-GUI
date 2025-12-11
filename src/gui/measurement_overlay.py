@@ -1665,8 +1665,8 @@ class MeasurementOverlay(QObject):
         polygon_roi.sigRegionChanged.connect(lambda: self._on_polygon_changed_lightweight(polygon_roi))
         polygon_roi.sigRegionChangeFinished.connect(lambda: self._on_polygon_change_finished(polygon_roi))
 
-        # Update label
-        self._update_polygon_label(polygon_roi)
+        # Update label with calculated area
+        self._on_polygon_changed_lightweight(polygon_roi)
 
     def restore_measurements(self, measurements: list):
         """
