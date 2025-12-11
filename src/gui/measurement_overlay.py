@@ -1521,3 +1521,171 @@ class MeasurementOverlay(QObject):
     def get_total_measurement_count(self) -> int:
         """Get total count of all measurements (lines + polygons)."""
         return len(self.active_line_rois) + len(self.active_polygon_rois) + len(self.completed_measurements)
+
+    # --- Serialization and Restore Methods ---
+
+    def restore_line_measurement(self, start: list, end: list, color: str = None):
+        """
+        Restore a line measurement from saved data.
+
+        Args:
+            start: [x, y] coordinates of start point
+            end: [x, y] coordinates of end point
+            color: Optional color string (uses next color if not provided)
+        """
+        if self.image_item.image is None:
+            return
+
+        # Get color
+        if color is None:
+            color = self.get_next_color()
+        qt_color = QColor(color)
+
+        # Increment counter
+        self.measurement_id_counter += 1
+
+        # Create the line ROI at the saved position
+        line_roi = ConstrainedLineSegmentROI(
+            [[start[0], start[1]],
+             [end[0], end[1]]],
+            pen=pg.mkPen(color=qt_color, width=2, style=Qt.SolidLine),
+            hoverPen=pg.mkPen(color='white', width=3),
+            handlePen=pg.mkPen(color=qt_color, width=8),
+            handleHoverPen=pg.mkPen(color='white', width=10),
+            movable=False
+        )
+
+        # Store metadata
+        line_roi._measurement_color = color
+        line_roi._measurement_id = self.measurement_id_counter
+
+        # Make handles visible
+        handles = line_roi.getHandles()
+        for handle in handles:
+            handle.radius = 8
+            handle.pen = pg.mkPen(qt_color, width=2)
+            handle.brush = pg.mkBrush(qt_color)
+            handle.setAcceptedMouseButtons(Qt.LeftButton)
+
+        # Prevent body drag
+        original_mouse_drag = line_roi.mouseDragEvent
+        def no_body_drag(ev, roi=line_roi):
+            for handle in roi.getHandles():
+                if handle.isMoving:
+                    return original_mouse_drag(ev)
+            ev.ignore()
+        line_roi.mouseDragEvent = no_body_drag
+
+        # Add to plot
+        self.plot_item.addItem(line_roi)
+        line_roi.setZValue(1000 + len(self.active_line_rois))
+        self.active_line_rois.append(line_roi)
+
+        # Create label
+        label = DraggableDistanceLabel(color=color)
+        label.set_font_size(self._label_font_size)
+        self.plot_item.addItem(label)
+        label.setZValue(1500 + len(self.active_line_rois))
+        label.set_visible(self._show_labels)
+        self._line_labels[line_roi] = label
+
+        # Set label position
+        mid_x = (start[0] + end[0]) / 2
+        mid_y = (start[1] + end[1]) / 2
+        label.set_anchor_position(mid_x, mid_y)
+        label.reset_position()
+
+        # Connect signals
+        line_roi.sigRegionChanged.connect(lambda: self._on_line_changed(line_roi))
+        line_roi.sigRegionChangeFinished.connect(lambda: self._on_line_change_finished(line_roi))
+
+        # Update label with measurement
+        self._emit_measurement_data_for_roi(line_roi)
+
+    def restore_polygon_measurement(self, vertices: list, color: str = None):
+        """
+        Restore a polygon measurement from saved data.
+
+        Args:
+            vertices: List of [x, y] coordinates for each vertex
+            color: Optional color string (uses next color if not provided)
+        """
+        if self.image_item.image is None or len(vertices) < 3:
+            return
+
+        # Get color
+        if color is None:
+            color = self.get_next_color()
+        qt_color = QColor(color)
+
+        # Increment counter
+        self.polygon_id_counter += 1
+
+        # Create polygon ROI
+        polygon_roi = pg.PolyLineROI(
+            vertices,
+            closed=True,
+            pen=pg.mkPen(color=qt_color, width=2),
+            hoverPen=pg.mkPen(color='white', width=3),
+            handlePen=pg.mkPen(color=qt_color, width=6),
+            handleHoverPen=pg.mkPen(color='white', width=8),
+            movable=False
+        )
+
+        # Store metadata
+        polygon_roi._measurement_color = color
+        polygon_roi._measurement_id = self.polygon_id_counter
+
+        # Make handles visible
+        handles = polygon_roi.getHandles()
+        for handle in handles:
+            handle.radius = 6
+            handle.pen = pg.mkPen(qt_color, width=2)
+            handle.brush = pg.mkBrush(qt_color)
+
+        # Add to plot
+        self.plot_item.addItem(polygon_roi)
+        polygon_roi.setZValue(900 + len(self.active_polygon_rois))
+        self.active_polygon_rois.append(polygon_roi)
+
+        # Create area label
+        label = DraggableAreaLabel(color=color)
+        self.plot_item.addItem(label)
+        label.setZValue(1400 + len(self.active_polygon_rois))
+        label.set_visible(self._show_labels)
+        self._polygon_labels[polygon_roi] = label
+
+        # Calculate centroid for label position
+        cx = sum(v[0] for v in vertices) / len(vertices)
+        cy = sum(v[1] for v in vertices) / len(vertices)
+        label.set_anchor_position(cx, cy)
+        label.reset_position()
+
+        # Connect signals
+        polygon_roi.sigRegionChanged.connect(lambda: self._on_polygon_changed(polygon_roi))
+        polygon_roi.sigRegionChangeFinished.connect(lambda: self._on_polygon_change_finished(polygon_roi))
+
+        # Update label
+        self._update_polygon_label(polygon_roi)
+
+    def restore_measurements(self, measurements: list):
+        """
+        Restore all measurements from saved data.
+
+        Args:
+            measurements: List of measurement dictionaries with 'type', 'start'/'end' or 'vertices'
+        """
+        for m in measurements:
+            m_type = m.get('type')
+            color = m.get('color')  # May be None
+
+            if m_type == 'line':
+                start = m.get('start')
+                end = m.get('end')
+                if start and end:
+                    self.restore_line_measurement(start, end, color)
+
+            elif m_type == 'polygon':
+                vertices = m.get('vertices')
+                if vertices and len(vertices) >= 3:
+                    self.restore_polygon_measurement(vertices, color)

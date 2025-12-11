@@ -2023,8 +2023,12 @@ class WorkspaceMainWindow(QMainWindow):
                             print(f"Error loading file {file_path}: {e}")
                             continue
 
-                    panel.set_data(data, file_path)
+                    panel.set_data(data, file_path, skip_overlay_warning=True)
                     panel.restore_state(state)
+
+                    # Restore measurements for this panel
+                    if workspace.measurements and panel.display_panel:
+                        panel.display_panel.restore_measurements(workspace.measurements)
 
         # Update menu and tab bar
         self._update_workspace_list_menu()

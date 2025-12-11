@@ -1175,6 +1175,19 @@ class DisplayPanel(QWidget):
         if self._measurement_overlay:
             self._measurement_overlay.clear_last()
 
+    def restore_measurements(self, measurements: list):
+        """
+        Restore measurements from saved data.
+
+        Args:
+            measurements: List of measurement dictionaries
+        """
+        if self._measurement_overlay and measurements:
+            # Set calibration first so measurements display correctly
+            self._set_measurement_calibration()
+            # Restore the measurements
+            self._measurement_overlay.restore_measurements(measurements)
+
     # --- Context Menu ---
 
     def _show_context_menu(self, pos):
