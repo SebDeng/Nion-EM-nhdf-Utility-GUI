@@ -31,6 +31,7 @@ from src.gui.preview_mode import AnalysisToolBar
 from src.gui.preview_mode.analysis_panel import AnalysisResultsPanel
 from src.gui.measurement_toolbar import MeasurementToolBar
 from src.gui.dose_calculator import DoseCalculatorDialog
+from src.gui.workspace_tab_bar import WorkspaceTabBar
 
 
 class WorkspaceMainWindow(QMainWindow):
@@ -122,6 +123,11 @@ class WorkspaceMainWindow(QMainWindow):
 
         # Keep reference to workspace for compatibility
         self._workspace = self._mode_manager.get_preview_widget()
+
+        # Add workspace tab bar at the bottom (Excel-like tabs for switching workspaces)
+        self._workspace_tab_bar = WorkspaceTabBar()
+        self._workspace_tab_bar.setFixedHeight(36)
+        central_layout.addWidget(self._workspace_tab_bar)
 
         self.setCentralWidget(central_widget)
 
@@ -360,6 +366,16 @@ class WorkspaceMainWindow(QMainWindow):
 
         # Connect panel selection to unified controls
         self._workspace.panel_selected.connect(self._update_unified_controls)
+
+        # Workspace tab bar signals
+        self._workspace_tab_bar.tab_selected.connect(self._on_tab_bar_tab_selected)
+        self._workspace_tab_bar.new_workspace_requested.connect(self._on_new_workspace)
+        self._workspace_tab_bar.close_workspace_requested.connect(self._on_tab_bar_close_workspace)
+        self._workspace_tab_bar.rename_workspace_requested.connect(self._on_tab_bar_rename_workspace)
+        self._workspace_tab_bar.clone_workspace_requested.connect(self._on_tab_bar_clone_workspace)
+
+        # Workspace manager signals - update tab bar when workspaces change
+        self._workspace_manager.workspaces_changed.connect(self._sync_tab_bar_with_workspaces)
 
     def _restore_state(self):
         """Restore window state from settings."""
@@ -681,6 +697,10 @@ class WorkspaceMainWindow(QMainWindow):
         # Update analysis panel theme
         if hasattr(self, '_analysis_panel'):
             self._analysis_panel.set_theme(is_dark)
+
+        # Update workspace tab bar theme
+        if hasattr(self, '_workspace_tab_bar'):
+            self._workspace_tab_bar.set_theme(is_dark)
 
         if is_dark:
             # Apply dark theme
@@ -1637,6 +1657,8 @@ class WorkspaceMainWindow(QMainWindow):
         if self._workspace_manager.workspace_count == 0:
             workspace = self._workspace_manager.new_workspace("Workspace 1")
             self._workspace_manager.set_current_workspace(workspace.uuid)
+            # Initialize tab bar with the first workspace
+            self._sync_tab_bar_with_workspaces()
 
     def _setup_workspaces_menu(self):
         """Set up the Workspaces submenu with workspace list and actions."""
@@ -1805,6 +1827,82 @@ class WorkspaceMainWindow(QMainWindow):
             self._save_current_workspace_state()
             self._switch_to_workspace(prev_uuid)
 
+    # --- Workspace Tab Bar Methods ---
+
+    def _sync_tab_bar_with_workspaces(self):
+        """Synchronize the tab bar with the workspace manager state."""
+        workspaces = [
+            {'uuid': ws.uuid, 'name': ws.name}
+            for ws in self._workspace_manager.workspaces
+        ]
+        current_uuid = self._workspace_manager.current_workspace_uuid
+        self._workspace_tab_bar.update_tabs(workspaces, current_uuid)
+
+    def _on_tab_bar_tab_selected(self, workspace_uuid: str):
+        """Handle tab selection from the tab bar."""
+        if workspace_uuid != self._workspace_manager.current_workspace_uuid:
+            self._save_current_workspace_state()
+            self._switch_to_workspace(workspace_uuid)
+
+    def _on_tab_bar_close_workspace(self, workspace_uuid: str):
+        """Handle workspace close request from tab bar."""
+        workspace = self._workspace_manager.get_workspace(workspace_uuid)
+        if not workspace:
+            return
+
+        if self._workspace_manager.workspace_count <= 1:
+            QMessageBox.warning(
+                self, "Cannot Close",
+                "Cannot close the last workspace."
+            )
+            return
+
+        reply = QMessageBox.question(
+            self, "Close Workspace",
+            f"Are you sure you want to close workspace '{workspace.name}'?\n"
+            "All panels in this workspace will be closed.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            # If closing current workspace, switch first
+            if workspace_uuid == self._workspace_manager.current_workspace_uuid:
+                next_uuid = self._workspace_manager.get_next_workspace_uuid()
+                if next_uuid == workspace_uuid:
+                    next_uuid = self._workspace_manager.get_previous_workspace_uuid()
+
+                # Delete workspace
+                self._workspace_manager.delete_workspace(workspace_uuid)
+
+                # Switch to next workspace
+                if next_uuid and next_uuid != workspace_uuid:
+                    self._switch_to_workspace(next_uuid)
+            else:
+                # Just delete the non-current workspace
+                self._workspace_manager.delete_workspace(workspace_uuid)
+
+            self._statusbar.showMessage("Workspace closed")
+
+    def _on_tab_bar_rename_workspace(self, workspace_uuid: str, new_name: str):
+        """Handle workspace rename request from tab bar."""
+        if self._workspace_manager.rename_workspace(workspace_uuid, new_name):
+            self._update_workspace_list_menu()
+            self._sync_tab_bar_with_workspaces()
+            self._update_window_title()
+            self._statusbar.showMessage(f"Renamed workspace to: {new_name}")
+
+    def _on_tab_bar_clone_workspace(self, workspace_uuid: str):
+        """Handle workspace clone request from tab bar."""
+        # Save current state first if cloning current workspace
+        if workspace_uuid == self._workspace_manager.current_workspace_uuid:
+            self._save_current_workspace_state()
+
+        clone = self._workspace_manager.clone_workspace(workspace_uuid)
+        if clone:
+            self._switch_to_workspace(clone.uuid)
+            self._statusbar.showMessage(f"Cloned workspace: {clone.name}")
+
     def _save_current_workspace_state(self):
         """Save the current workspace's state before switching."""
         if not self._workspace_manager.current_workspace:
@@ -1885,8 +1983,9 @@ class WorkspaceMainWindow(QMainWindow):
                     panel.set_data(data, file_path)
                     panel.restore_state(state)
 
-        # Update menu
+        # Update menu and tab bar
         self._update_workspace_list_menu()
+        self._sync_tab_bar_with_workspaces()
         self._update_window_title()
 
         # Update status

@@ -1170,7 +1170,51 @@ class DisplayPanel(QWidget):
 
     def _show_context_menu(self, pos):
         """Show the context menu on right-click."""
+        # Create our custom context menu
         menu = QMenu(self)
+
+        # Track if we found a nearby polygon handle
+        nearby_handle = None
+        nearby_handle_info = None
+
+        # Check if click is near a polygon handle to add handle-specific options
+        if self._measurement_overlay and hasattr(self, '_plot_item') and self._plot_item:
+            try:
+                view_box = self._plot_item.getViewBox()
+                scene_pos = view_box.mapSceneToView(
+                    self._graphics_widget.mapToScene(pos)
+                )
+
+                # Check all polygon ROIs
+                for polygon_roi in self._measurement_overlay.active_polygon_rois:
+                    # Check if click is near any handle
+                    for handle in polygon_roi.getHandles():
+                        handle_pos = polygon_roi.mapToScene(handle.pos())
+                        view_pos = view_box.mapSceneToView(handle_pos)
+
+                        # Calculate distance in scene coordinates
+                        dx = scene_pos.x() - view_pos.x()
+                        dy = scene_pos.y() - view_pos.y()
+                        distance = (dx*dx + dy*dy) ** 0.5
+
+                        # If click is near a handle (within threshold), remember it
+                        if distance < 20:  # Threshold in data coordinates
+                            nearby_handle = handle
+                            nearby_handle_info = (polygon_roi, handle)
+                            break
+                    if nearby_handle:
+                        break
+            except Exception:
+                pass
+
+        # If we're near a polygon handle, add handle-specific actions first
+        remove_handle_action = None
+        if nearby_handle and nearby_handle_info:
+            polygon_roi, handle = nearby_handle_info
+            # Only show "Remove handle" if polygon has more than 3 vertices
+            if len(polygon_roi.getHandles()) > 3:
+                remove_handle_action = menu.addAction("Remove Vertex")
+                menu.addSeparator()
 
         # Add Memo action
         add_memo_action = menu.addAction("Add Memo")
@@ -1178,18 +1222,27 @@ class DisplayPanel(QWidget):
         if not self.can_add_memo():
             add_memo_action.setText("Add Memo (max 2 reached)")
 
-        menu.addSeparator()
-
         # Clear memos action (only if there are memos)
+        clear_memos_action = None
         if self.get_memo_count() > 0:
+            menu.addSeparator()
             clear_memos_action = menu.addAction(f"Clear All Memos ({self.get_memo_count()})")
-        else:
-            clear_memos_action = None
 
         # Execute menu
         action = menu.exec(self._graphics_widget.mapToGlobal(pos))
 
-        if action == add_memo_action and self.can_add_memo():
+        # Handle actions
+        if action == remove_handle_action and nearby_handle_info:
+            polygon_roi, handle = nearby_handle_info
+            # Remove the handle from the polygon
+            try:
+                polygon_roi.removeHandle(handle)
+                # Trigger update of the polygon area
+                if hasattr(self._measurement_overlay, '_emit_polygon_area_data'):
+                    self._measurement_overlay._emit_polygon_area_data(polygon_roi)
+            except Exception as e:
+                print(f"Error removing handle: {e}")
+        elif action == add_memo_action and self.can_add_memo():
             self.create_memo()
         elif action == clear_memos_action and clear_memos_action:
             self.clear_memos()

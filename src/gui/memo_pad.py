@@ -30,6 +30,7 @@ class MemoPad(QFrame):
     # Signals
     closed = Signal(str)  # Emits memo_id when closed
     content_changed = Signal(str)  # Emits memo_id when content changes
+    minimized = Signal(str, bool)  # Emits (memo_id, is_minimized) when minimized/expanded
 
     # Class constants
     DEFAULT_WIDTH = 200
@@ -51,6 +52,8 @@ class MemoPad(QFrame):
         self._color_index = color_index % len(self.COLORS)
         self._drag_position: Optional[QPoint] = None
         self._is_dark_theme = True
+        self._is_minimized = False
+        self._expanded_height = self.DEFAULT_HEIGHT  # Store height when expanded
 
         self._setup_ui()
         self._apply_style()
@@ -84,10 +87,19 @@ class MemoPad(QFrame):
 
         title_layout.addStretch()
 
+        # Minimize button
+        self._minimize_btn = QPushButton("_")  # Underscore for minimize
+        self._minimize_btn.setFixedSize(18, 18)
+        self._minimize_btn.setCursor(Qt.PointingHandCursor)
+        self._minimize_btn.setToolTip("Minimize")
+        self._minimize_btn.clicked.connect(self._on_toggle_minimize)
+        title_layout.addWidget(self._minimize_btn)
+
         # Close button
-        self._close_btn = QPushButton("×")
+        self._close_btn = QPushButton("x")  # Simple x for close
         self._close_btn.setFixedSize(18, 18)
         self._close_btn.setCursor(Qt.PointingHandCursor)
+        self._close_btn.setToolTip("Close")
         self._close_btn.clicked.connect(self._on_close)
         title_layout.addWidget(self._close_btn)
 
@@ -161,18 +173,35 @@ class MemoPad(QFrame):
             }}
         """)
 
-        self._close_btn.setStyleSheet(f"""
+        # Minimize button - circular with visible background
+        self._minimize_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: transparent;
-                border: none;
+                background-color: rgba(0, 0, 0, 40);
+                border: 1px solid rgba(0, 0, 0, 60);
+                border-radius: 9px;
                 color: {text_color};
-                font-size: 16px;
+                font-size: 14px;
                 font-weight: bold;
             }}
             QPushButton:hover {{
-                background-color: rgba(255, 0, 0, 100);
+                background-color: rgba(100, 100, 100, 150);
                 color: white;
+            }}
+        """)
+
+        # Close button - circular with red hover
+        self._close_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: rgba(0, 0, 0, 40);
+                border: 1px solid rgba(0, 0, 0, 60);
                 border-radius: 9px;
+                color: {text_color};
+                font-size: 14px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: rgba(255, 80, 80, 200);
+                color: white;
             }}
         """)
 
@@ -224,6 +253,68 @@ class MemoPad(QFrame):
         self.hide()
         self.deleteLater()
 
+    def _on_toggle_minimize(self):
+        """Handle minimize button click - toggle between minimized and expanded states."""
+        if self._is_minimized:
+            self._expand()
+        else:
+            self._minimize()
+
+    def _minimize(self):
+        """Minimize the memo to just show the title bar."""
+        if self._is_minimized:
+            return
+
+        # Store current height before minimizing
+        self._expanded_height = self.height()
+
+        # Hide content area
+        self._content_widget.hide()
+
+        # Change button to expand indicator
+        self._minimize_btn.setText("+")  # Plus sign for expand
+        self._minimize_btn.setToolTip("Expand")
+
+        # Resize to just the title bar height
+        self.setFixedHeight(self._title_bar.height())
+        self.setMinimumHeight(self._title_bar.height())
+
+        self._is_minimized = True
+        self.minimized.emit(self.memo_id, True)
+
+    def _expand(self):
+        """Expand the memo to show full content."""
+        if not self._is_minimized:
+            return
+
+        # Restore minimum height
+        self.setMinimumHeight(self.MIN_HEIGHT)
+        self.setMaximumHeight(16777215)  # Default max
+
+        # Show content area
+        self._content_widget.show()
+
+        # Change button back to minimize indicator
+        self._minimize_btn.setText("_")
+        self._minimize_btn.setToolTip("Minimize")
+
+        # Restore height
+        self.resize(self.width(), self._expanded_height)
+
+        self._is_minimized = False
+        self.minimized.emit(self.memo_id, False)
+
+    def is_minimized(self) -> bool:
+        """Check if memo is minimized."""
+        return self._is_minimized
+
+    def set_minimized(self, minimized: bool):
+        """Set minimized state."""
+        if minimized:
+            self._minimize()
+        else:
+            self._expand()
+
     def _on_text_changed(self):
         """Handle text content change."""
         self.content_changed.emit(self.memo_id)
@@ -244,6 +335,8 @@ class MemoPad(QFrame):
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize memo to dictionary."""
+        # If minimized, store the expanded height instead of current height
+        height = self._expanded_height if self._is_minimized else self.height()
         return {
             'memo_id': self.memo_id,
             'color_index': self._color_index,
@@ -252,7 +345,8 @@ class MemoPad(QFrame):
             'x': self.x(),
             'y': self.y(),
             'width': self.width(),
-            'height': self.height()
+            'height': height,
+            'minimized': self._is_minimized
         }
 
     @classmethod
@@ -266,10 +360,17 @@ class MemoPad(QFrame):
         memo.set_text(data.get('text', ''))
         memo.set_title(data.get('title', 'Memo'))
         memo.move(data.get('x', 20), data.get('y', 20))
+
+        # Set size first (expanded size)
+        memo._expanded_height = data.get('height', cls.DEFAULT_HEIGHT)
         memo.resize(
             data.get('width', cls.DEFAULT_WIDTH),
-            data.get('height', cls.DEFAULT_HEIGHT)
+            memo._expanded_height
         )
+
+        # Then apply minimized state if needed
+        if data.get('minimized', False):
+            memo._minimize()
         return memo
 
 
