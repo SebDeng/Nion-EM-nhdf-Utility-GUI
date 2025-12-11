@@ -131,6 +131,12 @@ class WorkspaceDisplayPanel(WorkspacePanel):
             return self.display_panel._scale_bar_check.isChecked()
         return True
 
+    def get_subscan_overlay_visible(self) -> bool:
+        """Get whether the subscan overlay is visible."""
+        if self.display_panel and hasattr(self.display_panel, 'get_subscan_overlay_visible'):
+            return self.display_panel.get_subscan_overlay_visible()
+        return False
+
     def to_dict(self) -> dict:
         """Serialize panel to dictionary for session save."""
         data = super().to_dict()
@@ -142,6 +148,7 @@ class WorkspaceDisplayPanel(WorkspacePanel):
             data['display_range'] = self.get_display_range()
             data['auto_scale'] = self.get_auto_scale()
             data['scale_bar_visible'] = self.get_scale_bar_visible()
+            data['subscan_overlay_visible'] = self.get_subscan_overlay_visible()
             # Save memo pad data
             data['memos'] = self.display_panel.get_memos_data()
             # Save dose label data
@@ -186,6 +193,11 @@ class WorkspaceDisplayPanel(WorkspacePanel):
         if 'scale_bar_visible' in state:
             if hasattr(self.display_panel, '_scale_bar_check'):
                 self.display_panel._scale_bar_check.setChecked(state['scale_bar_visible'])
+
+        # Restore subscan overlay visibility
+        if 'subscan_overlay_visible' in state and state['subscan_overlay_visible']:
+            if hasattr(self.display_panel, 'set_subscan_overlay_visible'):
+                self.display_panel.set_subscan_overlay_visible(state['subscan_overlay_visible'])
 
         # Restore memo pads
         if 'memos' in state and state['memos']:

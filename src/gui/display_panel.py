@@ -1046,6 +1046,10 @@ class DisplayPanel(QWidget):
             # Update snap points for measurement overlay
             self._update_measurement_snap_points()
 
+    def get_subscan_overlay_visible(self) -> bool:
+        """Get the visibility of the subscan overlay."""
+        return self._subscan_overlay.isVisible() if self._subscan_overlay else False
+
     def _update_measurement_snap_points(self):
         """Update snap points for the measurement overlay based on subscan overlay."""
         if self._measurement_overlay:
