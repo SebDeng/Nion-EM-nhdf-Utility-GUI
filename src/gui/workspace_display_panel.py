@@ -173,8 +173,10 @@ class WorkspaceDisplayPanel(WorkspacePanel):
         if 'colormap' in state and state['colormap']:
             if hasattr(self.display_panel, '_colormap_combo'):
                 index = self.display_panel._colormap_combo.findText(state['colormap'])
+                print(f"DEBUG: colormap '{state['colormap']}' found at index {index}")
                 if index >= 0:
                     self.display_panel._colormap_combo.setCurrentIndex(index)
+                    print(f"DEBUG: Set colormap index to {index}")
 
         # Restore display range and auto scale
         if 'auto_scale' in state:
@@ -192,11 +194,16 @@ class WorkspaceDisplayPanel(WorkspacePanel):
         # Restore frame
         if 'frame' in state and state['frame'] is not None:
             if hasattr(self.display_panel, '_frame_controls'):
+                print(f"DEBUG: Setting frame to {state['frame']}")
                 self.display_panel._frame_controls.set_current_frame(state['frame'])
+                print(f"DEBUG: Frame after set: {self.display_panel._frame_controls._current_frame}")
+        else:
+            print(f"DEBUG: Skipping frame restore - frame in state: {'frame' in state}, value: {state.get('frame')}")
 
         # Restore scale bar visibility
         if 'scale_bar_visible' in state:
             if hasattr(self.display_panel, '_scale_bar_check'):
+                print(f"DEBUG: Setting scale_bar_visible to {state['scale_bar_visible']}")
                 self.display_panel._scale_bar_check.setChecked(state['scale_bar_visible'])
 
         # Restore subscan overlay visibility
