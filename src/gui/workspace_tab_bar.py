@@ -75,8 +75,9 @@ class WorkspaceTab(QPushButton):
                     border-bottom: none;
                     border-top-left-radius: 4px;
                     border-top-right-radius: 4px;
-                    padding: 6px 12px;
+                    padding: 8px 16px;
                     font-weight: bold;
+                    font-size: 13px;
                 }
                 QPushButton:hover {
                     background-color: #3a92ea;
@@ -92,7 +93,8 @@ class WorkspaceTab(QPushButton):
                     border-bottom: none;
                     border-top-left-radius: 4px;
                     border-top-right-radius: 4px;
-                    padding: 6px 12px;
+                    padding: 8px 16px;
+                    font-size: 13px;
                 }
                 QPushButton:hover {
                     background-color: #505050;
@@ -113,7 +115,8 @@ class WorkspaceTab(QPushButton):
                     border-bottom: none;
                     border-top-left-radius: 4px;
                     border-top-right-radius: 4px;
-                    padding: 6px 12px;
+                    padding: 8px 16px;
+                    font-size: 13px;
                 }
                 QPushButton:hover {
                     background-color: #c0c0c0;
@@ -193,7 +196,7 @@ class WorkspaceTabBar(QWidget):
         self._scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._scroll_area.setFrameShape(QFrame.NoFrame)
-        self._scroll_area.setFixedHeight(32)
+        self._scroll_area.setFixedHeight(40)
         self._scroll_area.setStyleSheet("""
             QScrollArea {
                 background-color: transparent;
@@ -213,14 +216,14 @@ class WorkspaceTabBar(QWidget):
 
         # Workspace list dropdown button (for quick navigation with many workspaces)
         self._list_button = QPushButton("≡")
-        self._list_button.setFixedSize(32, 28)
+        self._list_button.setFixedSize(36, 34)
         self._list_button.setToolTip("Show All Workspaces")
         self._list_button.clicked.connect(self._show_workspace_list)
         layout.addWidget(self._list_button)
 
         # Add workspace button - use Unicode "＋" (fullwidth plus) for better rendering
         self._add_button = QPushButton("＋")
-        self._add_button.setFixedSize(32, 28)
+        self._add_button.setFixedSize(36, 34)
         self._add_button.setToolTip("New Workspace (Ctrl+Shift+N)")
         self._add_button.clicked.connect(self.new_workspace_requested.emit)
         self._add_button.setStyleSheet("""
