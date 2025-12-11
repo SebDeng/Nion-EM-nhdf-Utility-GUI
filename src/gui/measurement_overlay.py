@@ -1662,7 +1662,7 @@ class MeasurementOverlay(QObject):
         label.reset_position()
 
         # Connect signals
-        polygon_roi.sigRegionChanged.connect(lambda: self._on_polygon_changed(polygon_roi))
+        polygon_roi.sigRegionChanged.connect(lambda: self._on_polygon_changed_lightweight(polygon_roi))
         polygon_roi.sigRegionChangeFinished.connect(lambda: self._on_polygon_change_finished(polygon_roi))
 
         # Update label
