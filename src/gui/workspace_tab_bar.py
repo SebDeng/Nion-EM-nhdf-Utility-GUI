@@ -211,6 +211,13 @@ class WorkspaceTabBar(QWidget):
         self._scroll_area.setWidget(self._tab_container)
         layout.addWidget(self._scroll_area, 1)
 
+        # Workspace list dropdown button (for quick navigation with many workspaces)
+        self._list_button = QPushButton("≡")
+        self._list_button.setFixedSize(32, 28)
+        self._list_button.setToolTip("Show All Workspaces")
+        self._list_button.clicked.connect(self._show_workspace_list)
+        layout.addWidget(self._list_button)
+
         # Add workspace button - use Unicode "＋" (fullwidth plus) for better rendering
         self._add_button = QPushButton("＋")
         self._add_button.setFixedSize(32, 28)
@@ -246,7 +253,7 @@ class WorkspaceTabBar(QWidget):
                     border-top: 1px solid #505050;
                 }
             """)
-            self._add_button.setStyleSheet("""
+            button_style = """
                 QPushButton {
                     background-color: #404040;
                     color: #c0c0c0;
@@ -261,7 +268,9 @@ class WorkspaceTabBar(QWidget):
                 QPushButton:pressed {
                     background-color: #2a82da;
                 }
-            """)
+            """
+            self._add_button.setStyleSheet(button_style)
+            self._list_button.setStyleSheet(button_style)
         else:
             self.setStyleSheet("""
                 WorkspaceTabBar {
@@ -269,7 +278,7 @@ class WorkspaceTabBar(QWidget):
                     border-top: 1px solid #b4b4b4;
                 }
             """)
-            self._add_button.setStyleSheet("""
+            button_style = """
                 QPushButton {
                     background-color: #d0d0d0;
                     color: #404040;
@@ -285,7 +294,9 @@ class WorkspaceTabBar(QWidget):
                     background-color: #2a82da;
                     color: white;
                 }
-            """)
+            """
+            self._add_button.setStyleSheet(button_style)
+            self._list_button.setStyleSheet(button_style)
 
     def set_theme(self, is_dark: bool):
         """Set the theme for the tab bar."""
@@ -416,3 +427,84 @@ class WorkspaceTabBar(QWidget):
 
         if ok and name.strip():
             self.rename_workspace_requested.emit(workspace_uuid, name.strip())
+
+    def _show_workspace_list(self):
+        """Show a popup menu with all workspaces for quick navigation."""
+        menu = QMenu(self)
+
+        # Style the menu based on theme
+        if self._is_dark_mode:
+            menu.setStyleSheet("""
+                QMenu {
+                    background-color: #3c3c3c;
+                    color: #e0e0e0;
+                    border: 1px solid #505050;
+                    padding: 4px;
+                }
+                QMenu::item {
+                    padding: 6px 24px 6px 12px;
+                    border-radius: 3px;
+                }
+                QMenu::item:selected {
+                    background-color: #2a82da;
+                    color: white;
+                }
+                QMenu::item:checked {
+                    font-weight: bold;
+                }
+                QMenu::separator {
+                    height: 1px;
+                    background-color: #505050;
+                    margin: 4px 8px;
+                }
+            """)
+        else:
+            menu.setStyleSheet("""
+                QMenu {
+                    background-color: #f5f5f5;
+                    color: #303030;
+                    border: 1px solid #b0b0b0;
+                    padding: 4px;
+                }
+                QMenu::item {
+                    padding: 6px 24px 6px 12px;
+                    border-radius: 3px;
+                }
+                QMenu::item:selected {
+                    background-color: #2a82da;
+                    color: white;
+                }
+                QMenu::item:checked {
+                    font-weight: bold;
+                }
+                QMenu::separator {
+                    height: 1px;
+                    background-color: #c0c0c0;
+                    margin: 4px 8px;
+                }
+            """)
+
+        # Add header
+        header = QAction(f"Workspaces ({len(self._tabs)})", self)
+        header.setEnabled(False)
+        menu.addAction(header)
+        menu.addSeparator()
+
+        # Add all workspaces sorted by tab order
+        for uuid, tab in self._tabs.items():
+            action = QAction(tab.text(), self)
+            action.setCheckable(True)
+            action.setChecked(uuid == self._current_uuid)
+
+            # Capture uuid in closure
+            workspace_uuid = uuid
+            action.triggered.connect(lambda checked, uid=workspace_uuid: self._on_menu_workspace_selected(uid))
+            menu.addAction(action)
+
+        # Show menu below the button
+        menu.exec_(self._list_button.mapToGlobal(self._list_button.rect().bottomLeft()))
+
+    def _on_menu_workspace_selected(self, workspace_uuid: str):
+        """Handle workspace selection from dropdown menu."""
+        if workspace_uuid != self._current_uuid:
+            self.tab_selected.emit(workspace_uuid)
