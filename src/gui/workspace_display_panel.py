@@ -162,7 +162,12 @@ class WorkspaceDisplayPanel(WorkspacePanel):
     def restore_state(self, state: dict):
         """Restore panel state from dictionary (after data is loaded)."""
         if not self.display_panel:
+            print(f"DEBUG restore_state: No display_panel!")
             return
+
+        print(f"DEBUG restore_state: panel_id={self.panel_id}")
+        print(f"DEBUG restore_state: state keys={list(state.keys())}")
+        print(f"DEBUG restore_state: colormap={state.get('colormap')}, frame={state.get('frame')}, scale_bar={state.get('scale_bar_visible')}")
 
         # Restore colormap via the combo box
         if 'colormap' in state and state['colormap']:
