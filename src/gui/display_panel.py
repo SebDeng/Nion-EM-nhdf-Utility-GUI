@@ -22,6 +22,7 @@ from src.gui.line_profile_overlay import LineProfileOverlay, LineProfileData
 from src.gui.measurement_overlay import MeasurementOverlay, MeasurementData
 from src.gui.memo_pad import MemoPadManager
 from src.gui.dose_label import DoseLabelManager
+from src.gui.material_label import MaterialLabelManager
 
 
 class ScaleBarItem(pg.GraphicsObject):
@@ -656,6 +657,7 @@ class DisplayPanel(QWidget):
         self._measurement_overlay: Optional[MeasurementOverlay] = None
         self._memo_manager: Optional[MemoPadManager] = None
         self._dose_label_manager: Optional[DoseLabelManager] = None
+        self._material_label_manager: Optional[MaterialLabelManager] = None
 
         self._setup_ui()
 
@@ -701,6 +703,9 @@ class DisplayPanel(QWidget):
 
         # Dose label manager (dose labels float over the graphics widget)
         self._dose_label_manager = DoseLabelManager(self._graphics_widget)
+
+        # Material label manager (atom count labels float over the graphics widget)
+        self._material_label_manager = MaterialLabelManager(self._graphics_widget)
 
         # Setup context menu for right-click
         self._graphics_widget.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -1111,6 +1116,10 @@ class DisplayPanel(QWidget):
         if self._dose_label_manager:
             self._dose_label_manager.set_theme(is_dark)
 
+        # Update material label themes
+        if self._material_label_manager:
+            self._material_label_manager.set_theme(is_dark)
+
     def create_line_profile(self):
         """Create a default line profile that can be dragged."""
         if self._line_profile_overlay:
@@ -1335,11 +1344,52 @@ class DisplayPanel(QWidget):
         if self._dose_label_manager:
             self._dose_label_manager.from_list(labels_data)
 
+    # --- Material Label Methods ---
+
+    def add_material_label(self, material_data: dict, x: int = 20, y: int = 20):
+        """
+        Add a material atom count label to the display.
+
+        Args:
+            material_data: Dictionary from calculate_atoms_in_area()
+            x, y: Initial position
+        """
+        if self._material_label_manager:
+            self._material_label_manager.create_label(material_data, x, y)
+
+    def can_add_material_label(self) -> bool:
+        """Check if more material labels can be added."""
+        if self._material_label_manager:
+            return self._material_label_manager.can_add_label
+        return False
+
+    def get_material_label_count(self) -> int:
+        """Get the number of active material labels."""
+        if self._material_label_manager:
+            return self._material_label_manager.label_count
+        return 0
+
+    def clear_material_labels(self):
+        """Clear all material labels."""
+        if self._material_label_manager:
+            self._material_label_manager.clear_all()
+
+    def get_material_labels_data(self) -> list:
+        """Get material label data for serialization."""
+        if self._material_label_manager:
+            return self._material_label_manager.to_list()
+        return []
+
+    def restore_material_labels(self, labels_data: list):
+        """Restore material labels from serialized data."""
+        if self._material_label_manager:
+            self._material_label_manager.from_list(labels_data)
+
     # --- Overlay Management Methods ---
 
     def has_active_overlays(self) -> bool:
         """
-        Check if there are any active overlays (memos, dose labels, measurements).
+        Check if there are any active overlays (memos, dose labels, material labels, measurements).
 
         Returns:
             True if any overlays are active, False otherwise.
@@ -1350,6 +1400,10 @@ class DisplayPanel(QWidget):
 
         # Check dose labels
         if self._dose_label_manager and self._dose_label_manager.label_count > 0:
+            return True
+
+        # Check material labels
+        if self._material_label_manager and self._material_label_manager.label_count > 0:
             return True
 
         # Check measurements
@@ -1377,6 +1431,11 @@ class DisplayPanel(QWidget):
             if count > 0:
                 items.append(f"{count} dose label(s)")
 
+        if self._material_label_manager:
+            count = self._material_label_manager.label_count
+            if count > 0:
+                items.append(f"{count} material label(s)")
+
         if self._measurement_overlay:
             count = self._measurement_overlay.get_total_measurement_count()
             if count > 0:
@@ -1387,7 +1446,7 @@ class DisplayPanel(QWidget):
         return "no overlays"
 
     def clear_all_overlays(self):
-        """Clear all overlays (memos, dose labels, measurements)."""
+        """Clear all overlays (memos, dose labels, material labels, measurements)."""
         # Clear memos
         if self._memo_manager:
             self._memo_manager.clear_all()
@@ -1395,6 +1454,10 @@ class DisplayPanel(QWidget):
         # Clear dose labels
         if self._dose_label_manager:
             self._dose_label_manager.clear_all()
+
+        # Clear material labels
+        if self._material_label_manager:
+            self._material_label_manager.clear_all()
 
         # Clear measurements
         if self._measurement_overlay:

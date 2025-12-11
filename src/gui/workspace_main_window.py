@@ -31,6 +31,7 @@ from src.gui.preview_mode import AnalysisToolBar
 from src.gui.preview_mode.analysis_panel import AnalysisResultsPanel
 from src.gui.measurement_toolbar import MeasurementToolBar
 from src.gui.dose_calculator import DoseCalculatorDialog
+from src.gui.material_calculator import MaterialCalculatorDialog
 from src.gui.workspace_tab_bar import WorkspaceTabBar
 
 
@@ -321,6 +322,11 @@ class WorkspaceMainWindow(QMainWindow):
         dose_calc_action.setShortcut(QKeySequence("Ctrl+D"))
         dose_calc_action.triggered.connect(self._on_show_dose_calculator)
         tools_menu.addAction(dose_calc_action)
+
+        material_calc_action = QAction("&Material Atom Calculator...", self)
+        material_calc_action.setShortcut(QKeySequence("Ctrl+M"))
+        material_calc_action.triggered.connect(self._on_show_material_calculator)
+        tools_menu.addAction(material_calc_action)
 
         # Export menu
         export_menu = menubar.addMenu("&Export")
@@ -1595,6 +1601,43 @@ class WorkspaceMainWindow(QMainWindow):
             return
 
         panel.display_panel.add_dose_label(dose_data, use_angstrom)
+
+    def _on_show_material_calculator(self):
+        """Show the material atom calculator dialog."""
+        # Get frame area from selected panel if available
+        frame_area_nm2 = None
+        if isinstance(self._workspace.selected_panel, WorkspaceDisplayPanel):
+            current_data = self._workspace.selected_panel.current_data
+            if current_data:
+                # Try to get frame area from dose calculation
+                dose_result = current_data.calculate_electron_dose()
+                if dose_result:
+                    frame_area_nm2 = dose_result.get('frame_area_nm2')
+
+        dialog = MaterialCalculatorDialog(frame_area_nm2, parent=self)
+        dialog.add_to_panel.connect(self._on_add_material_to_panel)
+        dialog.exec()
+
+    def _on_add_material_to_panel(self, material_data: dict):
+        """Add material calculation result as a floating label on the panel."""
+        if not isinstance(self._workspace.selected_panel, WorkspaceDisplayPanel):
+            QMessageBox.warning(
+                self,
+                "No Panel Selected",
+                "Please select a display panel first."
+            )
+            return
+
+        panel = self._workspace.selected_panel
+        if not panel.display_panel.can_add_material_label():
+            QMessageBox.warning(
+                self,
+                "Limit Reached",
+                "Maximum of 2 material labels per panel. Remove one to add another."
+            )
+            return
+
+        panel.display_panel.add_material_label(material_data)
 
     def _on_about(self):
         """Show about dialog."""

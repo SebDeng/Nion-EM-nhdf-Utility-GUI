@@ -146,6 +146,8 @@ class WorkspaceDisplayPanel(WorkspacePanel):
             data['memos'] = self.display_panel.get_memos_data()
             # Save dose label data
             data['dose_labels'] = self.display_panel.get_dose_labels_data()
+            # Save material label data
+            data['material_labels'] = self.display_panel.get_material_labels_data()
         return data
 
     def restore_state(self, state: dict):
@@ -190,6 +192,10 @@ class WorkspaceDisplayPanel(WorkspacePanel):
         # Restore dose labels
         if 'dose_labels' in state and state['dose_labels']:
             self.display_panel.restore_dose_labels(state['dose_labels'])
+
+        # Restore material labels
+        if 'material_labels' in state and state['material_labels']:
+            self.display_panel.restore_material_labels(state['material_labels'])
 
     @classmethod
     def from_dict(cls, data: dict) -> 'WorkspaceDisplayPanel':
