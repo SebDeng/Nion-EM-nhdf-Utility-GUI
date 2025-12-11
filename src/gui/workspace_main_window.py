@@ -2005,9 +2005,12 @@ class WorkspaceMainWindow(QMainWindow):
         self._workspace.from_dict(workspace.layout)
 
         # Restore panel states (file loading, display settings)
+        print(f"DEBUG: panel_states keys: {list(workspace.panel_states.keys())}")
         for panel in self._workspace.panels:
             if isinstance(panel, WorkspaceDisplayPanel):
+                print(f"DEBUG: Looking for panel_id: {panel.panel_id}")
                 state = workspace.panel_states.get(panel.panel_id, {})
+                print(f"DEBUG: Found state: {bool(state)}, keys: {list(state.keys()) if state else 'empty'}")
                 file_path = state.get('file_path')
 
                 if file_path:

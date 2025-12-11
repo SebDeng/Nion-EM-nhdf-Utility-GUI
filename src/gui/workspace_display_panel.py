@@ -127,8 +127,8 @@ class WorkspaceDisplayPanel(WorkspacePanel):
 
     def get_scale_bar_visible(self) -> bool:
         """Get whether the scale bar is visible."""
-        if self.display_panel and hasattr(self.display_panel, '_scale_bar_check'):
-            return self.display_panel._scale_bar_check.isChecked()
+        if self.display_panel and hasattr(self.display_panel, '_scalebar_check'):
+            return self.display_panel._scalebar_check.isChecked()
         return True
 
     def get_subscan_overlay_visible(self) -> bool:
@@ -202,9 +202,9 @@ class WorkspaceDisplayPanel(WorkspacePanel):
 
         # Restore scale bar visibility
         if 'scale_bar_visible' in state:
-            if hasattr(self.display_panel, '_scale_bar_check'):
+            if hasattr(self.display_panel, '_scalebar_check'):
                 print(f"DEBUG: Setting scale_bar_visible to {state['scale_bar_visible']}")
-                self.display_panel._scale_bar_check.setChecked(state['scale_bar_visible'])
+                self.display_panel._scalebar_check.setChecked(state['scale_bar_visible'])
 
         # Restore subscan overlay visibility
         if 'subscan_overlay_visible' in state and state['subscan_overlay_visible']:
