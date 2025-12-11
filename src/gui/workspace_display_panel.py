@@ -115,8 +115,8 @@ class WorkspaceDisplayPanel(WorkspacePanel):
 
     def get_current_frame(self) -> Optional[int]:
         """Get the current frame index if displaying a sequence."""
-        if self.display_panel and hasattr(self.display_panel, '_frame_slider'):
-            return self.display_panel._frame_slider.value()
+        if self.display_panel and hasattr(self.display_panel, '_frame_controls'):
+            return self.display_panel._frame_controls._current_frame
         return 0
 
     def get_auto_scale(self) -> bool:
@@ -186,8 +186,8 @@ class WorkspaceDisplayPanel(WorkspacePanel):
 
         # Restore frame
         if 'frame' in state and state['frame'] is not None:
-            if hasattr(self.display_panel, '_frame_slider'):
-                self.display_panel._frame_slider.setValue(state['frame'])
+            if hasattr(self.display_panel, '_frame_controls'):
+                self.display_panel._frame_controls.set_current_frame(state['frame'])
 
         # Restore scale bar visibility
         if 'scale_bar_visible' in state:
