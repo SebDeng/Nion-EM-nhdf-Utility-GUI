@@ -431,6 +431,7 @@ class WorkspaceTabBar(QWidget):
     def _show_workspace_list(self):
         """Show a popup menu with all workspaces for quick navigation."""
         menu = QMenu(self)
+        menu.setMinimumWidth(200)
 
         # Style the menu based on theme
         if self._is_dark_mode:
@@ -440,6 +441,7 @@ class WorkspaceTabBar(QWidget):
                     color: #e0e0e0;
                     border: 1px solid #505050;
                     padding: 4px;
+                    min-width: 200px;
                 }
                 QMenu::item {
                     padding: 6px 24px 6px 12px;
@@ -465,6 +467,7 @@ class WorkspaceTabBar(QWidget):
                     color: #303030;
                     border: 1px solid #b0b0b0;
                     padding: 4px;
+                    min-width: 200px;
                 }
                 QMenu::item {
                     padding: 6px 24px 6px 12px;
