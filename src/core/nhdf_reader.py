@@ -275,7 +275,7 @@ class NHDFData:
 
     def calculate_electron_dose(self, probe_current_pA: float = 15.0) -> Optional[Dict[str, float]]:
         """
-        Calculate electron dose and flux.
+        Calculate electron dose, flux, and electron counts.
 
         Args:
             probe_current_pA: Probe current in picoamperes (default: 15 pA)
@@ -283,7 +283,9 @@ class NHDFData:
         Returns:
             Dictionary with dose calculations or None if data is insufficient.
             Keys: 'dose_e_per_nm2', 'dose_e_per_A2', 'flux_e_per_nm2_s', 'flux_e_per_A2_s',
-                  'pixel_size_nm', 'pixel_time_us', 'electrons_per_pixel'
+                  'pixel_size_nm', 'pixel_time_us', 'electrons_per_pixel',
+                  'electrons_per_frame', 'total_electrons_series', 'num_pixels',
+                  'num_frames', 'frame_area_nm2', 'frame_area_A2'
         """
         pixel_size_nm = self.pixel_size_nm
         pixel_time_us = self.pixel_time_us
@@ -316,6 +318,21 @@ class NHDFData:
         flux_e_per_nm2_s = dose_e_per_nm2 / pixel_time_s
         flux_e_per_A2_s = dose_e_per_A2 / pixel_time_s
 
+        # Calculate frame-level electron counts
+        frame_shape = self.frame_shape
+        num_pixels = frame_shape[0] * frame_shape[1] if len(frame_shape) >= 2 else 1
+        num_frames = self.num_frames
+
+        # Total electrons per frame = electrons/pixel × number of pixels
+        electrons_per_frame = electrons_per_pixel * num_pixels
+
+        # Total electrons in the entire series = electrons/frame × number of frames
+        total_electrons_series = electrons_per_frame * num_frames
+
+        # Frame area (for reference)
+        frame_area_nm2 = pixel_area_nm2 * num_pixels
+        frame_area_A2 = pixel_area_A2 * num_pixels
+
         return {
             'dose_e_per_nm2': dose_e_per_nm2,
             'dose_e_per_A2': dose_e_per_A2,
@@ -324,7 +341,14 @@ class NHDFData:
             'pixel_size_nm': pixel_size_nm,
             'pixel_time_us': pixel_time_us,
             'electrons_per_pixel': electrons_per_pixel,
-            'probe_current_pA': probe_current_pA
+            'probe_current_pA': probe_current_pA,
+            # New electron count fields
+            'electrons_per_frame': electrons_per_frame,
+            'total_electrons_series': total_electrons_series,
+            'num_pixels': num_pixels,
+            'num_frames': num_frames,
+            'frame_area_nm2': frame_area_nm2,
+            'frame_area_A2': frame_area_A2
         }
 
 

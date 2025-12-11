@@ -1334,3 +1334,68 @@ class DisplayPanel(QWidget):
         """Restore dose labels from serialized data."""
         if self._dose_label_manager:
             self._dose_label_manager.from_list(labels_data)
+
+    # --- Overlay Management Methods ---
+
+    def has_active_overlays(self) -> bool:
+        """
+        Check if there are any active overlays (memos, dose labels, measurements).
+
+        Returns:
+            True if any overlays are active, False otherwise.
+        """
+        # Check memos
+        if self._memo_manager and self._memo_manager.memo_count > 0:
+            return True
+
+        # Check dose labels
+        if self._dose_label_manager and self._dose_label_manager.label_count > 0:
+            return True
+
+        # Check measurements
+        if self._measurement_overlay and self._measurement_overlay.get_total_measurement_count() > 0:
+            return True
+
+        return False
+
+    def get_overlay_summary(self) -> str:
+        """
+        Get a summary of active overlays for display in warning dialogs.
+
+        Returns:
+            A string describing what overlays are active.
+        """
+        items = []
+
+        if self._memo_manager:
+            count = self._memo_manager.memo_count
+            if count > 0:
+                items.append(f"{count} memo(s)")
+
+        if self._dose_label_manager:
+            count = self._dose_label_manager.label_count
+            if count > 0:
+                items.append(f"{count} dose label(s)")
+
+        if self._measurement_overlay:
+            count = self._measurement_overlay.get_total_measurement_count()
+            if count > 0:
+                items.append(f"{count} measurement(s)")
+
+        if items:
+            return ", ".join(items)
+        return "no overlays"
+
+    def clear_all_overlays(self):
+        """Clear all overlays (memos, dose labels, measurements)."""
+        # Clear memos
+        if self._memo_manager:
+            self._memo_manager.clear_all()
+
+        # Clear dose labels
+        if self._dose_label_manager:
+            self._dose_label_manager.clear_all()
+
+        # Clear measurements
+        if self._measurement_overlay:
+            self._measurement_overlay.clear_all()

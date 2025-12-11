@@ -110,8 +110,8 @@ class DoseCalculatorDialog(QDialog):
 
         layout.addWidget(input_group)
 
-        # Results Group
-        results_group = QGroupBox("Calculated Results")
+        # Results Group - Dose and Flux
+        results_group = QGroupBox("Dose & Flux")
         results_layout = QGridLayout(results_group)
         results_layout.setColumnStretch(1, 1)
 
@@ -135,6 +135,37 @@ class DoseCalculatorDialog(QDialog):
 
         layout.addWidget(results_group)
 
+        # Electron Counts Group
+        counts_group = QGroupBox("Electron Counts")
+        counts_layout = QGridLayout(counts_group)
+        counts_layout.setColumnStretch(1, 1)
+
+        # Electrons per frame
+        counts_layout.addWidget(QLabel("Electrons per Frame:"), 0, 0)
+        self._electrons_per_frame_label = QLabel("--")
+        self._electrons_per_frame_label.setStyleSheet("font-family: monospace; font-weight: bold; color: #ffaa4a;")
+        counts_layout.addWidget(self._electrons_per_frame_label, 0, 1)
+
+        # Total electrons (series)
+        counts_layout.addWidget(QLabel("Total Electrons (Series):"), 1, 0)
+        self._total_electrons_label = QLabel("--")
+        self._total_electrons_label.setStyleSheet("font-family: monospace; font-weight: bold; color: #ff6a9e;")
+        counts_layout.addWidget(self._total_electrons_label, 1, 1)
+
+        # Frame area
+        counts_layout.addWidget(QLabel("Frame Area:"), 2, 0)
+        self._frame_area_label = QLabel("--")
+        self._frame_area_label.setStyleSheet("font-family: monospace;")
+        counts_layout.addWidget(self._frame_area_label, 2, 1)
+
+        # Number of frames (for context)
+        counts_layout.addWidget(QLabel("Number of Frames:"), 3, 0)
+        self._num_frames_label = QLabel("--")
+        self._num_frames_label.setStyleSheet("font-family: monospace;")
+        counts_layout.addWidget(self._num_frames_label, 3, 1)
+
+        layout.addWidget(counts_group)
+
         # Formula info
         formula_frame = QFrame()
         formula_frame.setFrameStyle(QFrame.StyledPanel)
@@ -149,6 +180,8 @@ class DoseCalculatorDialog(QDialog):
             "• Electrons/pixel = (Probe Current × Pixel Time) / e\n"
             "• Dose = Electrons/pixel / Pixel Area\n"
             "• Flux = Dose / Pixel Time\n"
+            "• Electrons/frame = Electrons/pixel × Num Pixels\n"
+            "• Total (Series) = Electrons/frame × Num Frames\n"
             "\n"
             "Where e = 1.602 × 10⁻¹⁹ C (electron charge)"
         )
@@ -278,11 +311,40 @@ class DoseCalculatorDialog(QDialog):
             flux = result['flux_e_per_nm2_s']
             self._flux_label.setText(f"{flux:.2e} e⁻/nm²/s")
 
+        # Electron counts
+        e_per_frame = result.get('electrons_per_frame', 0)
+        total_e = result.get('total_electrons_series', 0)
+        num_frames = result.get('num_frames', 1)
+
+        # Format electron counts with appropriate notation
+        self._electrons_per_frame_label.setText(f"{e_per_frame:.3e} e⁻")
+
+        # Format total electrons - highlight if multi-frame
+        if num_frames > 1:
+            self._total_electrons_label.setText(f"{total_e:.3e} e⁻ ({num_frames} frames)")
+        else:
+            self._total_electrons_label.setText(f"{total_e:.3e} e⁻ (single frame)")
+
+        # Frame area
+        if use_angstrom:
+            frame_area = result.get('frame_area_A2', 0)
+            self._frame_area_label.setText(f"{frame_area:.2e} Ų")
+        else:
+            frame_area = result.get('frame_area_nm2', 0)
+            self._frame_area_label.setText(f"{frame_area:.2e} nm²")
+
+        # Number of frames
+        self._num_frames_label.setText(f"{num_frames}")
+
     def _clear_results(self):
         """Clear result labels."""
         self._electrons_per_pixel_label.setText("--")
         self._dose_label.setText("--")
         self._flux_label.setText("--")
+        self._electrons_per_frame_label.setText("--")
+        self._total_electrons_label.setText("--")
+        self._frame_area_label.setText("--")
+        self._num_frames_label.setText("--")
         self._last_result = None
         self._add_to_panel_btn.setEnabled(False)
 

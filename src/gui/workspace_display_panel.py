@@ -3,7 +3,7 @@ Display panel adapted for use in the workspace system.
 Wraps the existing DisplayPanel for use in WorkspacePanel.
 """
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QMessageBox
 from PySide6.QtCore import Signal
 
 from typing import Optional
@@ -50,8 +50,39 @@ class WorkspaceDisplayPanel(WorkspacePanel):
         if self.display_panel:
             self.display_panel.set_theme(is_dark)
 
-    def set_data(self, data: Optional[NHDFData], file_path: Optional[str] = None):
-        """Set the data to display."""
+    def set_data(self, data: Optional[NHDFData], file_path: Optional[str] = None,
+                 skip_overlay_warning: bool = False):
+        """
+        Set the data to display.
+
+        Args:
+            data: The NHDFData to display, or None to clear
+            file_path: Path to the file being loaded
+            skip_overlay_warning: If True, skip the warning dialog for active overlays
+        """
+        # Check if panel already has data with active overlays
+        if (data is not None and self.current_data is not None and
+                self.display_panel and self.display_panel.has_active_overlays() and
+                not skip_overlay_warning):
+
+            overlay_summary = self.display_panel.get_overlay_summary()
+
+            reply = QMessageBox.warning(
+                self,
+                "Replace Current Data",
+                f"This panel has active annotations:\n{overlay_summary}\n\n"
+                f"Loading a new file will clear all annotations.\n\n"
+                f"Do you want to continue?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+
+            if reply != QMessageBox.Yes:
+                return  # User cancelled, don't load the new file
+
+            # User confirmed - clear all overlays before loading
+            self.display_panel.clear_all_overlays()
+
         self.current_data = data
         self.current_file_path = file_path
 

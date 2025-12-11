@@ -30,8 +30,8 @@ class DoseLabel(QFrame):
     closed = Signal(str)  # Emits label_id when closed
 
     # Class constants
-    DEFAULT_WIDTH = 220
-    DEFAULT_HEIGHT = 85
+    DEFAULT_WIDTH = 240
+    DEFAULT_HEIGHT = 120
     MAX_DOSE_LABELS_PER_PANEL = 2
 
     def __init__(self, label_id: Optional[str] = None, parent=None):
@@ -102,6 +102,16 @@ class DoseLabel(QFrame):
         self._flux_label = QLabel("Flux: --")
         self._flux_label.setFont(QFont("monospace", 10))
         content_layout.addWidget(self._flux_label)
+
+        # Electrons per frame (orange)
+        self._e_per_frame_label = QLabel("e⁻/frame: --")
+        self._e_per_frame_label.setFont(QFont("monospace", 9))
+        content_layout.addWidget(self._e_per_frame_label)
+
+        # Total electrons (pink) - shows series total
+        self._total_e_label = QLabel("Total e⁻: --")
+        self._total_e_label.setFont(QFont("monospace", 9))
+        content_layout.addWidget(self._total_e_label)
 
         # Probe current label (smaller)
         self._probe_label = QLabel("I = -- pA")
@@ -207,6 +217,8 @@ class DoseLabel(QFrame):
         if not self._dose_data:
             self._dose_label.setText("Dose: --")
             self._flux_label.setText("Flux: --")
+            self._e_per_frame_label.setText("e⁻/frame: --")
+            self._total_e_label.setText("Total e⁻: --")
             self._probe_label.setText("I = -- pA")
             return
 
@@ -220,6 +232,9 @@ class DoseLabel(QFrame):
             unit = "nm²"
 
         probe_current = self._dose_data.get('probe_current_pA', 0)
+        e_per_frame = self._dose_data.get('electrons_per_frame', 0)
+        total_e = self._dose_data.get('total_electrons_series', 0)
+        num_frames = self._dose_data.get('num_frames', 1)
 
         # Format dose
         if dose >= 1e6:
@@ -230,6 +245,15 @@ class DoseLabel(QFrame):
 
         # Format flux
         self._flux_label.setText(f"Flux: {flux:.2e} e⁻/{unit}/s")
+
+        # Format electrons per frame
+        self._e_per_frame_label.setText(f"e⁻/frame: {e_per_frame:.2e}")
+
+        # Format total electrons - show frame count if multi-frame
+        if num_frames > 1:
+            self._total_e_label.setText(f"Total: {total_e:.2e} ({num_frames}f)")
+        else:
+            self._total_e_label.setText(f"Total: {total_e:.2e}")
 
         # Probe current
         self._probe_label.setText(f"I = {probe_current:.1f} pA")
