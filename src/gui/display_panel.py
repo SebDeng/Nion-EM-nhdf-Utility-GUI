@@ -945,12 +945,25 @@ class DisplayPanel(QWidget):
         self._current_frame = frame
         self._update_display()
         self.frame_changed.emit(frame)
+        # Sync hidden frame controls so getters return correct value
+        if hasattr(self, '_frame_controls'):
+            if self._frame_controls._current_frame != frame:
+                self._frame_controls.blockSignals(True)
+                self._frame_controls.set_current_frame(frame)
+                self._frame_controls.blockSignals(False)
 
     def _on_colormap_changed(self, name: str):
         """Handle colormap change."""
         self._current_cmap = get_colormap(name)
         self._image_item.setLookupTable(self._current_cmap.getLookupTable(nPts=256))
         self._colorbar.setColorMap(self._current_cmap)
+        # Update hidden combo box so getters return correct value
+        if hasattr(self, '_colormap_combo'):
+            index = self._colormap_combo.findText(name)
+            if index >= 0:
+                self._colormap_combo.blockSignals(True)
+                self._colormap_combo.setCurrentIndex(index)
+                self._colormap_combo.blockSignals(False)
 
     def _on_auto_scale_changed(self, checked: bool):
         """Handle auto scale toggle."""
@@ -970,6 +983,11 @@ class DisplayPanel(QWidget):
     def _on_scalebar_toggled(self, checked: bool):
         """Handle scale bar visibility toggle."""
         self._scale_bar.setVisible(checked)
+        # Update hidden checkbox so getters return correct value
+        if hasattr(self, '_scalebar_check'):
+            self._scalebar_check.blockSignals(True)
+            self._scalebar_check.setChecked(checked)
+            self._scalebar_check.blockSignals(False)
 
     def _update_scale_bar(self):
         """Update the scale bar based on current data calibration."""
