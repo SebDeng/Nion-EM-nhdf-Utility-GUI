@@ -30,9 +30,9 @@ class WorkspaceTab(QPushButton):
         self._is_dark_mode = True
 
         self.setCheckable(True)
-        self.setMinimumWidth(80)
+        self.setMinimumWidth(120)
         self.setMaximumWidth(200)
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
         # Enable context menu
         self.setContextMenuPolicy(Qt.CustomContextMenu)
