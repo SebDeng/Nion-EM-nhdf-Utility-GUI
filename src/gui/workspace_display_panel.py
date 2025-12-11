@@ -115,9 +115,9 @@ class WorkspaceDisplayPanel(WorkspacePanel):
 
     def get_current_frame(self) -> Optional[int]:
         """Get the current frame index if displaying a sequence."""
-        if self.display_panel and self.current_data and self.current_data.num_frames > 1:
-            return self.display_panel._frame_slider.value() if hasattr(self.display_panel, '_frame_slider') else 0
-        return None
+        if self.display_panel and hasattr(self.display_panel, '_frame_slider'):
+            return self.display_panel._frame_slider.value()
+        return 0
 
     def get_auto_scale(self) -> bool:
         """Get the auto scale setting from the display panel."""
