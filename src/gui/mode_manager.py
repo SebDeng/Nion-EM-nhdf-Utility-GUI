@@ -22,7 +22,7 @@ class ModeManager(QObject):
     file_loaded = Signal(str, object)  # Emits (file_path, NHDFData)
     processing_requested = Signal(str, object)  # Emits (file_path, NHDFData) for processing mode
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, panel_factory=None):
         super().__init__(parent)
 
         # Create tab widget
@@ -32,6 +32,9 @@ class ModeManager(QObject):
         # Lazy-loaded mode widgets
         self._preview_widget: Optional[QWidget] = None
         self._processing_widget: Optional[QWidget] = None
+
+        # Panel factory for workspace
+        self._panel_factory = panel_factory
 
         # Current state
         self.current_mode = "preview"
@@ -46,7 +49,7 @@ class ModeManager(QObject):
         """Initialize preview mode (always loaded)."""
         from src.gui.workspace_widget import WorkspaceWidget
 
-        self._preview_widget = WorkspaceWidget()
+        self._preview_widget = WorkspaceWidget(panel_factory=self._panel_factory)
         self.tab_widget.addTab(self._preview_widget, "Preview")
 
         # Connect preview widget signals

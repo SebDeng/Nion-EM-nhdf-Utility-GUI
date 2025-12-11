@@ -552,15 +552,35 @@ class WorkspaceWidget(QWidget):
     layout_changed = Signal()
     file_dropped_on_panel = Signal(WorkspacePanel, str)  # Emits (panel, file_path)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, panel_factory=None):
         super().__init__(parent)
         self.panels: List[WorkspacePanel] = []
         self.selected_panel: Optional[WorkspacePanel] = None
         self.root_splitter: Optional[QSplitter] = None
         self._is_dark_theme = True  # Store current theme state
+        # Panel factory allows customization of what type of panel is created
+        # Default creates WorkspacePanel, but can be set to create WorkspaceDisplayPanel
+        self._panel_factory = panel_factory or (lambda: WorkspacePanel())
 
         self._setup_ui()
         self._create_initial_panel()
+
+    def set_panel_factory(self, factory):
+        """Set a custom panel factory function.
+
+        Args:
+            factory: A callable that returns a new panel instance
+        """
+        self._panel_factory = factory
+
+    def _create_panel(self) -> WorkspacePanel:
+        """Create a new panel using the panel factory."""
+        panel = self._panel_factory()
+        panel.close_requested.connect(self._handle_panel_close)
+        panel.split_requested.connect(self._handle_panel_split)
+        panel.file_dropped.connect(self._handle_file_dropped)
+        panel.set_theme(self._is_dark_theme)
+        return panel
 
     def _setup_ui(self):
         """Set up the main workspace UI."""
@@ -570,13 +590,7 @@ class WorkspaceWidget(QWidget):
 
     def _create_initial_panel(self):
         """Create the initial empty panel."""
-        panel = WorkspacePanel()
-        panel.close_requested.connect(self._handle_panel_close)
-        panel.split_requested.connect(self._handle_panel_split)
-        panel.file_dropped.connect(self._handle_file_dropped)
-
-        # Apply current theme
-        panel.set_theme(self._is_dark_theme)
+        panel = self._create_panel()
 
         self.panels.append(panel)
         self.layout.addWidget(panel)
@@ -638,15 +652,9 @@ class WorkspaceWidget(QWidget):
 
     def _handle_panel_split(self, panel: WorkspacePanel, direction: str):
         """Handle panel split request."""
-        # Create new panel
-        new_panel = WorkspacePanel()
-        new_panel.close_requested.connect(self._handle_panel_close)
-        new_panel.split_requested.connect(self._handle_panel_split)
-        new_panel.file_dropped.connect(self._handle_file_dropped)
+        # Create new panel using factory
+        new_panel = self._create_panel()
         new_panel.set_title("Empty Panel")
-
-        # Apply current theme to the new panel
-        new_panel.set_theme(self._is_dark_theme)
 
         # Create splitter
         if direction == "horizontal":

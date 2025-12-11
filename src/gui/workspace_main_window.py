@@ -117,7 +117,8 @@ class WorkspaceMainWindow(QMainWindow):
         central_layout.addWidget(self._analysis_toolbar)
 
         # Create mode manager with tabbed workspace/processing
-        self._mode_manager = ModeManager(self)
+        # Use WorkspaceDisplayPanel as the panel factory so empty panels can have memos
+        self._mode_manager = ModeManager(self, panel_factory=lambda: WorkspaceDisplayPanel())
         self._mode_manager.mode_changed.connect(self._on_mode_changed)
         self._mode_manager.processing_requested.connect(self._on_processing_requested)
         central_layout.addWidget(self._mode_manager.get_widget(), 1)  # Give tabs the stretch factor
