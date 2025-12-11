@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QLabel, QFrame, QSizeGrip
 )
 from PySide6.QtCore import Qt, Signal, QPoint, QSize
-from PySide6.QtGui import QFont, QColor, QPalette, QMouseEvent
+from PySide6.QtGui import QFont, QColor, QPalette, QMouseEvent, QKeySequence, QTextCharFormat, QShortcut
 
 from typing import Optional, Dict, Any
 import uuid
@@ -118,6 +118,9 @@ class MemoPad(QFrame):
         self._text_edit.textChanged.connect(self._on_text_changed)
         content_layout.addWidget(self._text_edit)
 
+        # Set up keyboard shortcuts for formatting
+        self._setup_shortcuts()
+
         # Bottom bar with resize grip
         self._bottom_bar = QWidget()
         self._bottom_bar.setObjectName("MemoBottomBar")
@@ -214,6 +217,41 @@ class MemoPad(QFrame):
         """)
         # Make the viewport transparent too
         self._text_edit.viewport().setStyleSheet("background-color: transparent;")
+
+    def _setup_shortcuts(self):
+        """Set up keyboard shortcuts for text formatting."""
+        # Bold: Cmd+B (Mac) / Ctrl+B (Windows/Linux)
+        bold_shortcut = QShortcut(QKeySequence.StandardKey.Bold, self._text_edit)
+        bold_shortcut.activated.connect(self._toggle_bold)
+
+        # Italic: Cmd+I (Mac) / Ctrl+I (Windows/Linux)
+        italic_shortcut = QShortcut(QKeySequence.StandardKey.Italic, self._text_edit)
+        italic_shortcut.activated.connect(self._toggle_italic)
+
+        # Underline: Cmd+U (Mac) / Ctrl+U (Windows/Linux)
+        underline_shortcut = QShortcut(QKeySequence.StandardKey.Underline, self._text_edit)
+        underline_shortcut.activated.connect(self._toggle_underline)
+
+    def _toggle_bold(self):
+        """Toggle bold formatting on current selection or cursor position."""
+        fmt = self._text_edit.currentCharFormat()
+        if fmt.fontWeight() == QFont.Bold:
+            fmt.setFontWeight(QFont.Normal)
+        else:
+            fmt.setFontWeight(QFont.Bold)
+        self._text_edit.mergeCurrentCharFormat(fmt)
+
+    def _toggle_italic(self):
+        """Toggle italic formatting on current selection or cursor position."""
+        fmt = self._text_edit.currentCharFormat()
+        fmt.setFontItalic(not fmt.fontItalic())
+        self._text_edit.mergeCurrentCharFormat(fmt)
+
+    def _toggle_underline(self):
+        """Toggle underline formatting on current selection or cursor position."""
+        fmt = self._text_edit.currentCharFormat()
+        fmt.setFontUnderline(not fmt.fontUnderline())
+        self._text_edit.mergeCurrentCharFormat(fmt)
 
     def set_theme(self, is_dark: bool):
         """Update theme."""
@@ -322,12 +360,20 @@ class MemoPad(QFrame):
     # --- Public API ---
 
     def get_text(self) -> str:
-        """Get the memo text content."""
+        """Get the memo text content (plain text)."""
         return self._text_edit.toPlainText()
 
+    def get_html(self) -> str:
+        """Get the memo content as HTML (preserves formatting)."""
+        return self._text_edit.toHtml()
+
     def set_text(self, text: str):
-        """Set the memo text content."""
+        """Set the memo text content (plain text, no formatting)."""
         self._text_edit.setPlainText(text)
+
+    def set_html(self, html: str):
+        """Set the memo content from HTML (preserves formatting)."""
+        self._text_edit.setHtml(html)
 
     def set_title(self, title: str):
         """Set the memo title."""
@@ -340,7 +386,8 @@ class MemoPad(QFrame):
         return {
             'memo_id': self.memo_id,
             'color_index': self._color_index,
-            'text': self.get_text(),
+            'text': self.get_text(),  # Plain text for backward compatibility
+            'html': self.get_html(),  # HTML to preserve formatting
             'title': self._title_label.text(),
             'x': self.x(),
             'y': self.y(),
@@ -357,7 +404,11 @@ class MemoPad(QFrame):
             color_index=data.get('color_index', 0),
             parent=parent
         )
-        memo.set_text(data.get('text', ''))
+        # Prefer HTML content if available (preserves formatting), fall back to plain text
+        if 'html' in data and data['html']:
+            memo.set_html(data['html'])
+        else:
+            memo.set_text(data.get('text', ''))
         memo.set_title(data.get('title', 'Memo'))
         memo.move(data.get('x', 20), data.get('y', 20))
 
