@@ -1398,6 +1398,12 @@ class DisplayPanel(QWidget):
         if self._material_label_manager:
             self._material_label_manager.from_list(labels_data)
 
+    def get_measurements_data(self) -> list:
+        """Get measurements data for serialization."""
+        if self._measurement_overlay:
+            return self._measurement_overlay.get_measurements_data()
+        return []
+
     # --- Overlay Management Methods ---
 
     def has_active_overlays(self) -> bool:

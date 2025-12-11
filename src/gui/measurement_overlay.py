@@ -1292,6 +1292,51 @@ class MeasurementOverlay(QObject):
         """Get the current label font size."""
         return self._label_font_size
 
+    def get_measurements_data(self) -> list:
+        """
+        Get all measurements data for serialization.
+
+        Returns:
+            List of measurement dictionaries with type, coordinates, and color.
+        """
+        measurements = []
+
+        # Serialize line measurements
+        for line_roi in self.active_line_rois:
+            handles = line_roi.getLocalHandlePositions()
+            roi_pos = line_roi.pos()
+
+            if len(handles) >= 2:
+                start = [roi_pos.x() + handles[0][1].x(), roi_pos.y() + handles[0][1].y()]
+                end = [roi_pos.x() + handles[1][1].x(), roi_pos.y() + handles[1][1].y()]
+
+                # Get color from the ROI pen
+                color = line_roi.pen.color().name() if hasattr(line_roi, 'pen') else None
+
+                measurements.append({
+                    'type': 'line',
+                    'start': start,
+                    'end': end,
+                    'color': color,
+                    'id': getattr(line_roi, '_measurement_id', 0)
+                })
+
+        # Serialize polygon measurements
+        for polygon_roi in self.active_polygon_rois:
+            vertices = self._get_polygon_vertices(polygon_roi)
+
+            # Get color from the ROI pen
+            color = polygon_roi.pen.color().name() if hasattr(polygon_roi, 'pen') else None
+
+            measurements.append({
+                'type': 'polygon',
+                'vertices': [[v[0], v[1]] for v in vertices],
+                'color': color,
+                'id': getattr(polygon_roi, '_polygon_id', 0)
+            })
+
+        return measurements
+
     # ==================== Polygon Area Measurement Methods ====================
 
     def create_polygon_area(self):
