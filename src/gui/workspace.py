@@ -15,13 +15,15 @@ import uuid
 from typing import Optional, List, Dict, Any, Union
 from dataclasses import dataclass
 
-# Supported EM file extensions for drag-drop
+# Supported file extensions for drag-drop (EM formats + images)
 SUPPORTED_EM_EXTENSIONS = ('.nhdf', '.dm3', '.dm4')
+SUPPORTED_IMAGE_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp')
+SUPPORTED_EXTENSIONS = SUPPORTED_EM_EXTENSIONS + SUPPORTED_IMAGE_EXTENSIONS
 
 
 def is_supported_em_file(file_path: str) -> bool:
-    """Check if file path is a supported EM file format."""
-    return file_path.lower().endswith(SUPPORTED_EM_EXTENSIONS)
+    """Check if file path is a supported file format (EM or image)."""
+    return file_path.lower().endswith(SUPPORTED_EXTENSIONS)
 
 
 @dataclass

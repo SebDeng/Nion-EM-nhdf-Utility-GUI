@@ -40,8 +40,8 @@ class DraggableTreeView(QTreeView):
         # Get file path
         file_path = source_model.filePath(source_index)
 
-        # Only allow dragging of supported EM files
-        supported_extensions = ('.nhdf', '.dm3', '.dm4')
+        # Only allow dragging of supported files (EM + images)
+        supported_extensions = ('.nhdf', '.dm3', '.dm4', '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp')
         if not file_path.lower().endswith(supported_extensions):
             return
 
@@ -62,10 +62,10 @@ class DraggableTreeView(QTreeView):
 
 
 class EMFileFilterProxyModel(QSortFilterProxyModel):
-    """Proxy model to filter for EM data files (nhdf, dm3, dm4) and directories."""
+    """Proxy model to filter for EM data files and images."""
 
-    # Supported file extensions
-    SUPPORTED_EXTENSIONS = ('.nhdf', '.dm3', '.dm4')
+    # Supported file extensions (EM + images)
+    SUPPORTED_EXTENSIONS = ('.nhdf', '.dm3', '.dm4', '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp')
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -137,7 +137,7 @@ class FileBrowserPanel(QWidget):
         filter_layout.addWidget(QLabel("Filter:"))
 
         self._filter_combo = QComboBox()
-        self._filter_combo.addItems(["nhdf files (*.nhdf)", "All files (*)"])
+        self._filter_combo.addItems(["Supported files", "All files (*)"])
         self._filter_combo.currentIndexChanged.connect(self._on_filter_changed)
         filter_layout.addWidget(self._filter_combo, 1)
 
@@ -206,7 +206,7 @@ class FileBrowserPanel(QWidget):
             if path.exists():
                 if path.is_dir():
                     self.set_root_path(path)
-                elif path.is_file() and path.suffix.lower() == '.nhdf':
+                elif path.is_file() and path.suffix.lower() in EMFileFilterProxyModel.SUPPORTED_EXTENSIONS:
                     self.set_root_path(path.parent)
                     self.file_double_clicked.emit(path)
 
@@ -231,7 +231,7 @@ class FileBrowserPanel(QWidget):
         source_index = self._proxy_model.mapToSource(index)
         path = pathlib.Path(self._fs_model.filePath(source_index))
 
-        if path.is_file() and path.suffix.lower() == '.nhdf':
+        if path.is_file() and path.suffix.lower() in EMFileFilterProxyModel.SUPPORTED_EXTENSIONS:
             self.file_selected.emit(path)
 
     def _on_item_double_clicked(self, index: QModelIndex):
@@ -241,7 +241,7 @@ class FileBrowserPanel(QWidget):
 
         if path.is_dir():
             self.set_root_path(path)
-        elif path.is_file() and path.suffix.lower() == '.nhdf':
+        elif path.is_file() and path.suffix.lower() in EMFileFilterProxyModel.SUPPORTED_EXTENSIONS:
             self.file_double_clicked.emit(path)
 
     def _on_context_menu(self, pos):
@@ -255,7 +255,7 @@ class FileBrowserPanel(QWidget):
 
         menu = QMenu(self)
 
-        if path.is_file() and path.suffix.lower() == '.nhdf':
+        if path.is_file() and path.suffix.lower() in EMFileFilterProxyModel.SUPPORTED_EXTENSIONS:
             open_action = QAction("Open", self)
             open_action.triggered.connect(lambda: self.file_double_clicked.emit(path))
             menu.addAction(open_action)

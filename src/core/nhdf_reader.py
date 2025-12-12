@@ -22,6 +22,16 @@ try:
 except ImportError:
     HAS_NCEMPY = False
 
+# PIL for standard image formats (PNG, JPG, etc.)
+try:
+    from PIL import Image
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
+
+# Supported image extensions
+IMAGE_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp')
+
 
 @dataclass
 class CalibrationInfo:
@@ -737,11 +747,87 @@ def read_dm3(path: pathlib.Path, use_cache: bool = True) -> NHDFData:
     return _dm3_reader.read(path, use_cache)
 
 
+def read_image_file(path: pathlib.Path) -> NHDFData:
+    """
+    Read a standard image file (PNG, JPG, TIFF, BMP) and return as NHDFData.
+
+    Args:
+        path: Path to the image file
+
+    Returns:
+        NHDFData object with the image data
+    """
+    if not HAS_PIL:
+        raise ImportError("PIL/Pillow is required to read image files. Install with: pip install Pillow")
+
+    path = pathlib.Path(path)
+
+    # Open and convert image to numpy array
+    with Image.open(path) as img:
+        # Convert to RGB if necessary (handles RGBA, palette, etc.)
+        if img.mode == 'RGBA':
+            # Convert RGBA to RGB with white background
+            background = Image.new('RGB', img.size, (255, 255, 255))
+            background.paste(img, mask=img.split()[3])
+            img = background
+        elif img.mode != 'RGB' and img.mode != 'L':
+            img = img.convert('RGB')
+
+        # Convert to numpy array
+        data = np.array(img)
+
+    # Handle grayscale vs color
+    if len(data.shape) == 2:
+        # Grayscale image - already 2D
+        pass
+    elif len(data.shape) == 3:
+        if data.shape[2] == 3:
+            # RGB - convert to grayscale for consistent display
+            # Using standard luminance formula
+            data = np.dot(data[..., :3], [0.2989, 0.5870, 0.1140]).astype(data.dtype)
+        elif data.shape[2] == 1:
+            # Single channel - squeeze
+            data = data.squeeze()
+
+    # Create data descriptor (2D image)
+    data_descriptor = DataDescriptor(
+        is_sequence=False,
+        collection_dimension_count=0,
+        datum_dimension_count=2
+    )
+
+    # Default calibrations (pixels)
+    dim_cals = [
+        CalibrationInfo(offset=0.0, scale=1.0, units='px'),
+        CalibrationInfo(offset=0.0, scale=1.0, units='px')
+    ]
+    int_cal = CalibrationInfo(offset=0.0, scale=1.0, units='')
+
+    # Build metadata
+    metadata = {
+        'title': path.stem,
+        'source_format': path.suffix.lower().lstrip('.'),
+        'original_size': data.shape
+    }
+
+    return NHDFData(
+        file_path=path,
+        data=data,
+        data_descriptor=data_descriptor,
+        intensity_calibration=int_cal,
+        dimensional_calibrations=dim_cals,
+        metadata=metadata,
+        timestamp=datetime.now(),
+        raw_properties={'title': path.stem, 'is_image_file': True}
+    )
+
+
 def read_em_file(path: pathlib.Path, use_cache: bool = True) -> NHDFData:
     """
-    Read an EM file (nhdf, dm3, or dm4) and return data in NHDFData format.
+    Read an EM file or image file and return data in NHDFData format.
 
     Automatically detects file type based on extension.
+    Supports: .nhdf, .dm3, .dm4, .png, .jpg, .jpeg, .tif, .tiff, .bmp
     """
     path = pathlib.Path(path)
     suffix = path.suffix.lower()
@@ -750,8 +836,10 @@ def read_em_file(path: pathlib.Path, use_cache: bool = True) -> NHDFData:
         return _nhdf_reader.read(path, use_cache)
     elif suffix in ('.dm3', '.dm4'):
         return _dm3_reader.read(path, use_cache)
+    elif suffix in IMAGE_EXTENSIONS:
+        return read_image_file(path)
     else:
-        raise ValueError(f"Unsupported file format: {suffix}. Supported: .nhdf, .dm3, .dm4")
+        raise ValueError(f"Unsupported file format: {suffix}. Supported: .nhdf, .dm3, .dm4, .png, .jpg, .tif, .bmp")
 
 
 def get_file_info(path: pathlib.Path) -> Dict[str, Any]:
@@ -774,14 +862,14 @@ def clear_cache(path: Optional[pathlib.Path] = None):
 
 
 def is_supported_file(path: pathlib.Path) -> bool:
-    """Check if a file is a supported EM format."""
+    """Check if a file is a supported format (EM or image)."""
     suffix = pathlib.Path(path).suffix.lower()
-    return suffix in ('.nhdf', '.dm3', '.dm4')
+    return suffix in ('.nhdf', '.dm3', '.dm4') or suffix in IMAGE_EXTENSIONS
 
 
 def get_supported_extensions() -> List[str]:
     """Get list of supported file extensions."""
-    return ['.nhdf', '.dm3', '.dm4']
+    return ['.nhdf', '.dm3', '.dm4'] + list(IMAGE_EXTENSIONS)
 
 
 def create_nhdf_data_from_array(
