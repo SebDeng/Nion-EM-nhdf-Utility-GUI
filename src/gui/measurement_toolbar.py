@@ -278,6 +278,14 @@ class MeasurementToolBar(QFrame):
         self._distance_label.setStyleSheet("font-family: monospace; font-size: 12px;")
         layout.addWidget(self._distance_label)
 
+        # Total polygon area display label
+        self._total_area_label = QLabel("")
+        self._total_area_label.setMinimumWidth(160)
+        self._total_area_label.setStyleSheet("font-family: monospace; font-size: 12px; color: #4CAF50;")
+        self._total_area_label.setToolTip("Total area of all polygons")
+        self._total_area_label.setVisible(False)  # Hidden until we have polygons
+        layout.addWidget(self._total_area_label)
+
         # Separator
         sep2 = QFrame()
         sep2.setFrameShape(QFrame.VLine)
@@ -402,9 +410,32 @@ class MeasurementToolBar(QFrame):
 
         self._distance_label.setText(text)
 
+    def update_total_polygon_area(self, area_px: float, area_nm2: float = None):
+        """Update the total polygon area display."""
+        # Hide label if no area (no polygons)
+        if area_px <= 0:
+            self._total_area_label.setVisible(False)
+            return
+
+        # Show label and format text
+        self._total_area_label.setVisible(True)
+
+        if area_nm2 is not None:
+            if area_nm2 >= 1e6:
+                text = f"Σ: {area_nm2/1e6:.2f} μm²"
+            elif area_nm2 >= 1:
+                text = f"Σ: {area_nm2:.1f} nm²"
+            else:
+                text = f"Σ: {area_nm2:.3f} nm²"
+        else:
+            text = f"Σ: {area_px:.0f} px²"
+
+        self._total_area_label.setText(text)
+
     def clear_display(self):
         """Clear the measurement display."""
         self._distance_label.setText("--")
+        self._total_area_label.setVisible(False)
 
     def clear_distance(self):
         """Clear the distance display (alias for clear_display)."""

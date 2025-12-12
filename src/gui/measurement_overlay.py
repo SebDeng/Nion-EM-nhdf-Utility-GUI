@@ -795,6 +795,7 @@ class MeasurementOverlay(QObject):
     measurement_updated = Signal(MeasurementData)  # Emitted when measurement is updated
     measurements_cleared = Signal()  # Emitted when all measurements are cleared
     polygon_area_created = Signal(PolygonAreaData)  # Emitted when polygon area is measured
+    total_polygon_area_changed = Signal(float, object)  # Emitted when total polygon area changes (area_px, area_nm2)
 
     def __init__(self, plot_item: pg.PlotItem, image_item: pg.ImageItem):
         super().__init__()
@@ -1158,6 +1159,8 @@ class MeasurementOverlay(QObject):
 
     def clear_active(self):
         """Clear all active (uncommitted) measurement lines and polygons."""
+        had_polygons = len(self.active_polygon_rois) > 0
+
         # Clear lines
         for line_roi in self.active_line_rois:
             if line_roi in self._line_labels:
@@ -1174,9 +1177,14 @@ class MeasurementOverlay(QObject):
             self.plot_item.removeItem(polygon_roi)
         self.active_polygon_rois.clear()
 
+        # Emit total area update if polygons were cleared
+        if had_polygons:
+            self._emit_total_polygon_area()
+
     def clear_all(self):
         """Clear all measurements (active and completed)."""
         # Clear all active lines and polygons (and their labels)
+        # Note: clear_active() already emits total polygon area if polygons were present
         self.clear_active()
 
         # Clear completed measurements
@@ -1197,6 +1205,8 @@ class MeasurementOverlay(QObject):
         last_line_id = self.active_line_rois[-1]._measurement_id if self.active_line_rois else -1
         last_poly_id = self.active_polygon_rois[-1]._polygon_id if self.active_polygon_rois else -1
 
+        removed_polygon = False
+
         # Remove the most recent one
         if last_poly_id > last_line_id and self.active_polygon_rois:
             last_roi = self.active_polygon_rois.pop()
@@ -1206,6 +1216,7 @@ class MeasurementOverlay(QObject):
             self.plot_item.removeItem(last_roi)
             if self.color_index > 0:
                 self.color_index -= 1
+            removed_polygon = True
         elif self.active_line_rois:
             last_roi = self.active_line_rois.pop()
             if last_roi in self._line_labels:
@@ -1219,6 +1230,10 @@ class MeasurementOverlay(QObject):
             self.plot_item.removeItem(last_measurement)
             if self.color_index > 0:
                 self.color_index -= 1
+
+        # Emit total area update if a polygon was removed
+        if removed_polygon:
+            self._emit_total_polygon_area()
 
     def has_active_measurement(self) -> bool:
         """Check if there are any active measurement lines."""
@@ -1254,6 +1269,14 @@ class MeasurementOverlay(QObject):
         # Update all active measurement labels
         for line_roi in self.active_line_rois:
             self._emit_measurement_data_for_roi(line_roi)
+
+        # Update all polygon labels with new calibration
+        for polygon_roi in self.active_polygon_rois:
+            self._emit_polygon_area_data(polygon_roi)
+
+        # Emit total area with new calibration (if we have polygons)
+        if self.active_polygon_rois:
+            self._emit_total_polygon_area()
 
     def set_labels_visible(self, visible: bool):
         """Show or hide all floating labels (distance and area)."""
@@ -1547,6 +1570,9 @@ class MeasurementOverlay(QObject):
 
         self.polygon_area_created.emit(polygon_data)
 
+        # Emit total polygon area update
+        self._emit_total_polygon_area()
+
     def _format_area_text(self, area_px: float, area_nm2: Optional[float]) -> str:
         """Format area for display in label."""
         if area_nm2 is not None:
@@ -1566,6 +1592,32 @@ class MeasurementOverlay(QObject):
     def get_total_measurement_count(self) -> int:
         """Get total count of all measurements (lines + polygons)."""
         return len(self.active_line_rois) + len(self.active_polygon_rois) + len(self.completed_measurements)
+
+    def get_total_polygon_area(self) -> Tuple[float, Optional[float]]:
+        """
+        Calculate the total area of all active polygons.
+
+        Returns:
+            Tuple of (area_px, area_nm2) where area_nm2 is None if no calibration
+        """
+        total_area_px = 0.0
+
+        for polygon_roi in self.active_polygon_rois:
+            vertices = self._get_polygon_vertices(polygon_roi)
+            if len(vertices) >= 3:
+                total_area_px += self._calculate_polygon_area(vertices)
+
+        # Calculate calibrated area if available
+        total_area_nm2 = None
+        if self.calibration and hasattr(self.calibration, 'scale') and total_area_px > 0:
+            total_area_nm2 = total_area_px * (self.calibration.scale ** 2)
+
+        return (total_area_px, total_area_nm2)
+
+    def _emit_total_polygon_area(self):
+        """Calculate and emit the total polygon area."""
+        area_px, area_nm2 = self.get_total_polygon_area()
+        self.total_polygon_area_changed.emit(area_px, area_nm2)
 
     # --- Serialization and Restore Methods ---
 
@@ -1720,6 +1772,8 @@ class MeasurementOverlay(QObject):
         Args:
             measurements: List of measurement dictionaries with 'type', 'start'/'end' or 'vertices'
         """
+        has_polygons = False
+
         for m in measurements:
             m_type = m.get('type')
             color = m.get('color')  # May be None
@@ -1734,3 +1788,8 @@ class MeasurementOverlay(QObject):
                 vertices = m.get('vertices')
                 if vertices and len(vertices) >= 3:
                     self.restore_polygon_measurement(vertices, color)
+                    has_polygons = True
+
+        # Emit total polygon area after all polygons are restored
+        if has_polygons:
+            self._emit_total_polygon_area()

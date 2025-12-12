@@ -1026,6 +1026,7 @@ class WorkspaceMainWindow(QMainWindow):
             if overlay_id not in self._measurement_connected_panels:
                 display._measurement_overlay.measurement_created.connect(self._on_measurement_updated)
                 display._measurement_overlay.polygon_area_created.connect(self._on_polygon_area_updated)
+                display._measurement_overlay.total_polygon_area_changed.connect(self._on_total_polygon_area_updated)
                 self._measurement_connected_panels.add(overlay_id)
 
     def _on_clear_measurements(self):
@@ -1062,6 +1063,10 @@ class WorkspaceMainWindow(QMainWindow):
                 polygon_data.area_px,
                 polygon_data.area_nm2
             )
+
+    def _on_total_polygon_area_updated(self, area_px: float, area_nm2):
+        """Handle total polygon area updates from display panels."""
+        self._measurement_toolbar.update_total_polygon_area(area_px, area_nm2)
 
     def _on_toggle_measurement_labels(self, visible: bool):
         """Handle toggle labels checkbox from measurement toolbar."""
