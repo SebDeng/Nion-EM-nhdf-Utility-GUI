@@ -1269,6 +1269,8 @@ class WorkspaceMainWindow(QMainWindow):
                 self._update_histogram_for_panel(panel)
                 # Update line profile for the selected panel
                 self._update_line_profile_for_panel(panel)
+            # Update total polygon area for the selected panel
+            self._update_total_polygon_area_for_panel(panel)
         else:
             self._current_display_panel = None
             self._metadata_panel.clear()
@@ -1276,6 +1278,8 @@ class WorkspaceMainWindow(QMainWindow):
             if hasattr(self, '_analysis_panel'):
                 self._analysis_panel._histogram_widget.clear_histogram()
                 self._analysis_panel._line_profile_widget.clear_plot()
+            # Clear total polygon area display
+            self._measurement_toolbar.update_total_polygon_area(0, None)
 
         self._update_export_actions()
 
@@ -1290,6 +1294,20 @@ class WorkspaceMainWindow(QMainWindow):
         """Handle frame change in a panel - update histogram if this is the selected panel."""
         if panel == self._workspace.selected_panel:
             self._update_histogram_for_panel(panel)
+
+    def _update_total_polygon_area_for_panel(self, panel: WorkspaceDisplayPanel):
+        """Update the total polygon area display for the given panel."""
+        if not isinstance(panel, WorkspaceDisplayPanel):
+            self._measurement_toolbar.update_total_polygon_area(0, None)
+            return
+
+        # Get the display panel and measurement overlay
+        display_panel = panel.display_panel if hasattr(panel, 'display_panel') else None
+        if display_panel and hasattr(display_panel, '_measurement_overlay') and display_panel._measurement_overlay:
+            area_px, area_nm2 = display_panel._measurement_overlay.get_total_polygon_area()
+            self._measurement_toolbar.update_total_polygon_area(area_px, area_nm2)
+        else:
+            self._measurement_toolbar.update_total_polygon_area(0, None)
 
     def _update_histogram_for_panel(self, panel: WorkspaceDisplayPanel):
         """Update the histogram display for the given panel."""
