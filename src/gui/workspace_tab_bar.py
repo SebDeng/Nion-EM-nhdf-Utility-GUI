@@ -9,25 +9,27 @@ from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QPushButton, QMenu, QInputDialog,
     QMessageBox, QSizePolicy, QScrollArea, QFrame
 )
-from PySide6.QtCore import Qt, Signal, QSize
-from PySide6.QtGui import QAction, QMouseEvent
+from PySide6.QtCore import Qt, Signal, QSize, QMimeData, QPoint
+from PySide6.QtGui import QAction, QMouseEvent, QDrag, QPixmap, QPainter
 
 from typing import Optional, List, Dict
 
 
 class WorkspaceTab(QPushButton):
-    """Individual workspace tab button."""
+    """Individual workspace tab button with drag-and-drop support."""
 
     # Signals
     close_requested = Signal(str)  # workspace uuid
     rename_requested = Signal(str)  # workspace uuid
     clone_requested = Signal(str)  # workspace uuid
+    drag_started = Signal(str)  # workspace uuid being dragged
 
     def __init__(self, workspace_uuid: str, name: str, parent=None):
         super().__init__(name, parent)
         self._uuid = workspace_uuid
         self._is_current = False
         self._is_dark_mode = True
+        self._drag_start_pos = None
 
         self.setCheckable(True)
         self.setMinimumWidth(120)
@@ -37,6 +39,9 @@ class WorkspaceTab(QPushButton):
         # Enable context menu
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
+
+        # Enable drag-and-drop
+        self.setAcceptDrops(True)
 
         self._update_style()
 
@@ -155,6 +160,40 @@ class WorkspaceTab(QPushButton):
         else:
             super().mouseDoubleClickEvent(event)
 
+    def mousePressEvent(self, event: QMouseEvent):
+        """Start drag tracking on mouse press."""
+        if event.button() == Qt.LeftButton:
+            self._drag_start_pos = event.pos()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent):
+        """Start drag if mouse moved far enough."""
+        if self._drag_start_pos is None:
+            return
+
+        if (event.pos() - self._drag_start_pos).manhattanLength() < 10:
+            return
+
+        # Start drag
+        drag = QDrag(self)
+        mime_data = QMimeData()
+        mime_data.setText(f"workspace_tab:{self._uuid}")
+        drag.setMimeData(mime_data)
+
+        # Create pixmap of the tab for visual feedback
+        pixmap = self.grab()
+        drag.setPixmap(pixmap)
+        drag.setHotSpot(event.pos())
+
+        self._drag_start_pos = None
+        self.drag_started.emit(self._uuid)
+        drag.exec_(Qt.MoveAction)
+
+    def mouseReleaseEvent(self, event: QMouseEvent):
+        """Clear drag tracking on mouse release."""
+        self._drag_start_pos = None
+        super().mouseReleaseEvent(event)
+
 
 class WorkspaceTabBar(QWidget):
     """
@@ -174,15 +213,19 @@ class WorkspaceTabBar(QWidget):
     close_workspace_requested = Signal(str)  # workspace uuid
     rename_workspace_requested = Signal(str, str)  # workspace uuid, new name
     clone_workspace_requested = Signal(str)  # workspace uuid
+    tabs_reordered = Signal(list)  # list of workspace uuids in new order
 
     def __init__(self, parent=None):
         super().__init__(parent)
 
         self._tabs: Dict[str, WorkspaceTab] = {}  # uuid -> tab
+        self._tab_order: List[str] = []  # Track tab order
         self._current_uuid: Optional[str] = None
         self._is_dark_mode = True
+        self._dragging_uuid: Optional[str] = None
 
         self._setup_ui()
+        self.setAcceptDrops(True)
 
     def _setup_ui(self):
         """Set up the tab bar UI."""
@@ -321,8 +364,10 @@ class WorkspaceTabBar(QWidget):
         tab.close_requested.connect(self._on_close_requested)
         tab.rename_requested.connect(self._on_rename_requested)
         tab.clone_requested.connect(self.clone_workspace_requested.emit)
+        tab.drag_started.connect(self._on_drag_started)
 
         self._tabs[workspace_uuid] = tab
+        self._tab_order.append(workspace_uuid)
         self._tab_layout.addWidget(tab)
 
     def remove_tab(self, workspace_uuid: str):
@@ -333,6 +378,9 @@ class WorkspaceTabBar(QWidget):
         tab = self._tabs.pop(workspace_uuid)
         self._tab_layout.removeWidget(tab)
         tab.deleteLater()
+
+        if workspace_uuid in self._tab_order:
+            self._tab_order.remove(workspace_uuid)
 
         if self._current_uuid == workspace_uuid:
             self._current_uuid = None
@@ -362,6 +410,112 @@ class WorkspaceTabBar(QWidget):
         for uuid in list(self._tabs.keys()):
             self.remove_tab(uuid)
         self._current_uuid = None
+        self._tab_order = []
+
+    def get_tab_order(self) -> List[str]:
+        """Get the current tab order as list of workspace uuids."""
+        return self._tab_order.copy()
+
+    def _on_drag_started(self, workspace_uuid: str):
+        """Track which tab is being dragged."""
+        self._dragging_uuid = workspace_uuid
+
+    def dragEnterEvent(self, event):
+        """Accept drag if it's a workspace tab."""
+        if event.mimeData().hasText():
+            text = event.mimeData().text()
+            if text.startswith("workspace_tab:"):
+                event.acceptProposedAction()
+                return
+        event.ignore()
+
+    def dragMoveEvent(self, event):
+        """Handle drag move to show drop position."""
+        if event.mimeData().hasText():
+            text = event.mimeData().text()
+            if text.startswith("workspace_tab:"):
+                event.acceptProposedAction()
+                return
+        event.ignore()
+
+    def dropEvent(self, event):
+        """Handle tab drop to reorder."""
+        if not event.mimeData().hasText():
+            event.ignore()
+            return
+
+        text = event.mimeData().text()
+        if not text.startswith("workspace_tab:"):
+            event.ignore()
+            return
+
+        dragged_uuid = text.split(":", 1)[1]
+        if dragged_uuid not in self._tabs:
+            event.ignore()
+            return
+
+        # Find the target position based on drop location
+        drop_pos = event.position().toPoint()
+        target_index = self._find_drop_index(drop_pos)
+
+        # Get current index of dragged tab
+        if dragged_uuid not in self._tab_order:
+            event.ignore()
+            return
+
+        current_index = self._tab_order.index(dragged_uuid)
+
+        # Reorder if position changed
+        if target_index != current_index and target_index != current_index + 1:
+            # Remove from current position
+            self._tab_order.remove(dragged_uuid)
+
+            # Adjust target index if needed (since we removed an item)
+            if target_index > current_index:
+                target_index -= 1
+
+            # Insert at new position
+            self._tab_order.insert(target_index, dragged_uuid)
+
+            # Update layout
+            self._reorder_tab_widgets()
+
+            # Emit signal for saving
+            self.tabs_reordered.emit(self._tab_order.copy())
+
+        event.acceptProposedAction()
+        self._dragging_uuid = None
+
+    def _find_drop_index(self, pos: QPoint) -> int:
+        """Find the index where a tab should be dropped based on position."""
+        # Convert position to tab container coordinates
+        container_pos = self._tab_container.mapFrom(self, pos)
+
+        # Find which tab we're over
+        for i, uuid in enumerate(self._tab_order):
+            tab = self._tabs.get(uuid)
+            if tab:
+                tab_rect = tab.geometry()
+                # If drop is in left half of tab, insert before; otherwise after
+                if container_pos.x() < tab_rect.center().x():
+                    return i
+
+        # Drop at end
+        return len(self._tab_order)
+
+    def _reorder_tab_widgets(self):
+        """Reorder tab widgets in layout to match _tab_order."""
+        # Remove all tabs from layout (without deleting them)
+        for uuid in self._tab_order:
+            tab = self._tabs.get(uuid)
+            if tab:
+                self._tab_layout.removeWidget(tab)
+
+        # Re-add in correct order
+        for uuid in self._tab_order:
+            tab = self._tabs.get(uuid)
+            if tab:
+                self._tab_layout.addWidget(tab)
 
     def update_tabs(self, workspaces: List[Dict], current_uuid: Optional[str] = None):
         """
@@ -379,21 +533,27 @@ class WorkspaceTabBar(QWidget):
         for uuid in existing_uuids - new_uuids:
             self.remove_tab(uuid)
 
-        # Add new tabs
+        # Add new tabs (but don't add to _tab_order yet - we'll set it from workspaces order)
         for ws in workspaces:
             if ws['uuid'] not in existing_uuids:
-                self.add_tab(ws['uuid'], ws['name'])
+                # Create tab without using add_tab to avoid double-adding to _tab_order
+                tab = WorkspaceTab(ws['uuid'], ws['name'])
+                tab.set_theme(self._is_dark_mode)
+                tab.clicked.connect(lambda checked, uid=ws['uuid']: self._on_tab_clicked(uid))
+                tab.close_requested.connect(self._on_close_requested)
+                tab.rename_requested.connect(self._on_rename_requested)
+                tab.clone_requested.connect(self.clone_workspace_requested.emit)
+                tab.drag_started.connect(self._on_drag_started)
+                self._tabs[ws['uuid']] = tab
             else:
                 # Update name if changed
                 self.rename_tab(ws['uuid'], ws['name'])
 
-        # Reorder tabs to match workspace order
-        for i, ws in enumerate(workspaces):
-            tab = self._tabs.get(ws['uuid'])
-            if tab:
-                # Remove and re-add at correct position
-                self._tab_layout.removeWidget(tab)
-                self._tab_layout.insertWidget(i, tab)
+        # Update tab order to match workspaces order
+        self._tab_order = [ws['uuid'] for ws in workspaces]
+
+        # Reorder tab widgets in layout
+        self._reorder_tab_widgets()
 
         # Set current tab
         if current_uuid:

@@ -761,6 +761,7 @@ def read_image_file(path: pathlib.Path) -> NHDFData:
         raise ImportError("PIL/Pillow is required to read image files. Install with: pip install Pillow")
 
     path = pathlib.Path(path)
+    is_rgb = False
 
     # Open and convert image to numpy array
     with Image.open(path) as img:
@@ -770,7 +771,10 @@ def read_image_file(path: pathlib.Path) -> NHDFData:
             background = Image.new('RGB', img.size, (255, 255, 255))
             background.paste(img, mask=img.split()[3])
             img = background
-        elif img.mode != 'RGB' and img.mode != 'L':
+        elif img.mode == 'L':
+            # Already grayscale, keep as-is
+            pass
+        elif img.mode != 'RGB':
             img = img.convert('RGB')
 
         # Convert to numpy array
@@ -779,17 +783,23 @@ def read_image_file(path: pathlib.Path) -> NHDFData:
     # Handle grayscale vs color
     if len(data.shape) == 2:
         # Grayscale image - already 2D
-        pass
+        is_rgb = False
     elif len(data.shape) == 3:
         if data.shape[2] == 3:
-            # RGB - convert to grayscale for consistent display
-            # Using standard luminance formula
-            data = np.dot(data[..., :3], [0.2989, 0.5870, 0.1140]).astype(data.dtype)
+            # RGB - keep as RGB for proper color display
+            is_rgb = True
         elif data.shape[2] == 1:
             # Single channel - squeeze
             data = data.squeeze()
+            is_rgb = False
 
-    # Create data descriptor (2D image)
+    # Flip vertically for correct display in pyqtgraph (Y=0 at bottom)
+    if is_rgb:
+        data = np.flip(data, axis=0)
+    else:
+        data = np.flip(data, axis=0)
+
+    # Create data descriptor (2D image, or 3D for RGB)
     data_descriptor = DataDescriptor(
         is_sequence=False,
         collection_dimension_count=0,
@@ -801,13 +811,17 @@ def read_image_file(path: pathlib.Path) -> NHDFData:
         CalibrationInfo(offset=0.0, scale=1.0, units='px'),
         CalibrationInfo(offset=0.0, scale=1.0, units='px')
     ]
+    if is_rgb:
+        # Add calibration for color channel
+        dim_cals.append(CalibrationInfo(offset=0.0, scale=1.0, units=''))
     int_cal = CalibrationInfo(offset=0.0, scale=1.0, units='')
 
     # Build metadata
     metadata = {
         'title': path.stem,
         'source_format': path.suffix.lower().lstrip('.'),
-        'original_size': data.shape
+        'original_size': data.shape,
+        'is_rgb': is_rgb
     }
 
     return NHDFData(
@@ -818,7 +832,7 @@ def read_image_file(path: pathlib.Path) -> NHDFData:
         dimensional_calibrations=dim_cals,
         metadata=metadata,
         timestamp=datetime.now(),
-        raw_properties={'title': path.stem, 'is_image_file': True}
+        raw_properties={'title': path.stem, 'is_image_file': True, 'is_rgb': is_rgb}
     )
 
 

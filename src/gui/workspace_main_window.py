@@ -380,6 +380,7 @@ class WorkspaceMainWindow(QMainWindow):
         self._workspace_tab_bar.close_workspace_requested.connect(self._on_tab_bar_close_workspace)
         self._workspace_tab_bar.rename_workspace_requested.connect(self._on_tab_bar_rename_workspace)
         self._workspace_tab_bar.clone_workspace_requested.connect(self._on_tab_bar_clone_workspace)
+        self._workspace_tab_bar.tabs_reordered.connect(self._on_tabs_reordered)
 
         # Workspace manager signals - update tab bar when workspaces change
         self._workspace_manager.workspaces_changed.connect(self._sync_tab_bar_with_workspaces)
@@ -1946,6 +1947,11 @@ class WorkspaceMainWindow(QMainWindow):
         if clone:
             self._switch_to_workspace(clone.uuid)
             self._statusbar.showMessage(f"Cloned workspace: {clone.name}")
+
+    def _on_tabs_reordered(self, new_order: list):
+        """Handle tab reorder from drag-and-drop."""
+        self._workspace_manager.reorder_workspaces(new_order)
+        self._statusbar.showMessage("Workspace tabs reordered")
 
     def _save_current_workspace_state(self):
         """Save the current workspace's state before switching."""

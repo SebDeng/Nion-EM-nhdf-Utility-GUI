@@ -868,12 +868,31 @@ class DisplayPanel(QWidget):
         # Get current frame data
         frame_data = self._data.get_frame(self._current_frame)
 
-        if self._data.is_2d_image:
-            # Display as image
+        # Check if this is an RGB image
+        is_rgb = (self._data.raw_properties.get('is_rgb', False) or
+                  (len(frame_data.shape) == 3 and frame_data.shape[2] == 3))
+
+        if is_rgb:
+            # RGB image - display directly without colormap
+            # pyqtgraph expects (height, width, 3) for RGB
+            self._image_item.setImage(frame_data)
+            # Clear the lookup table to show true colors
+            self._image_item.setLookupTable(None)
+            # Hide colorbar for RGB images
+            self._colorbar.setVisible(False)
+            # Update scale bar
+            self._update_scale_bar()
+            # Update info
+            self._update_info_label()
+
+        elif self._data.is_2d_image:
+            # Display as grayscale image with colormap
             self._image_item.setImage(frame_data.T)  # Transpose for correct orientation
 
             # Apply current colormap
             self._image_item.setLookupTable(self._current_cmap.getLookupTable(nPts=256))
+            # Show colorbar
+            self._colorbar.setVisible(True)
 
             # Update scale
             if self._auto_scale_check.isChecked():

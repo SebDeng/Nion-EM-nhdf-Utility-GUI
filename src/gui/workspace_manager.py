@@ -244,6 +244,25 @@ class WorkspaceManager(QObject):
 
         return clone
 
+    def reorder_workspaces(self, new_order: List[str]) -> bool:
+        """
+        Reorder workspaces to match the given order.
+
+        Args:
+            new_order: List of workspace UUIDs in the desired order
+
+        Returns:
+            True if reordered, False if order is invalid
+        """
+        # Validate that new_order contains exactly the same UUIDs
+        if set(new_order) != set(self._workspace_order):
+            return False
+
+        self._workspace_order = new_order.copy()
+        self.workspaces_changed.emit()
+
+        return True
+
     def get_workspace(self, workspace_uuid: str) -> Optional[WorkspaceState]:
         """Get a workspace by UUID."""
         return self._workspaces.get(workspace_uuid)
