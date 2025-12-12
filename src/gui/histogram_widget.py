@@ -195,9 +195,9 @@ class HistogramWidget(QWidget):
 
     def clear_histogram(self):
         """Clear the histogram display."""
-        # Clear the histogram - use matching X/Y arrays without stepMode
-        # When setting data without stepMode parameter, X and Y must have same length
-        self._histogram_item.setData([], [])
+        # Clear the histogram - with stepMode=True, X must be len(Y)+1
+        # Cannot use empty arrays, so use dummy data and hide
+        self._histogram_item.setData([0, 1], [0])
         self._histogram_item.setVisible(False)
         self._info_label.setText("")
         self._current_data = None

@@ -949,9 +949,9 @@ class WorkspaceMainWindow(QMainWindow):
             return
 
         panel = self._workspace.selected_panel
-        if panel.current_data and panel.current_file:
+        if panel.current_data and panel.current_file_path:
             # Switch to processing mode and load the file
-            self._mode_manager.switch_to_processing(panel.current_file, panel.current_data)
+            self._mode_manager.switch_to_processing(panel.current_file_path, panel.current_data)
             self._statusbar.showMessage("Sent to Processing Mode")
 
     def _on_create_line_profile(self):
