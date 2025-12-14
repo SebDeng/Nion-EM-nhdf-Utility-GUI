@@ -20,21 +20,34 @@ Please send any bug or issue you noticed to sebastian.deng@yale.edu and I will t
 **Have FUN!!!**
 ## Features
 
-- **Multi-Format Support**: Read both Nion nhdf and Gatan DM3/DM4 files
+- **Multi-Format Support**: Read Nion nhdf, Gatan DM3/DM4, and standard images (PNG, JPG, TIFF, BMP)
 - **Free-Tiling Workspace** (Default): Nion Swift-style panel management with flexible splitting
-- **Drag & Drop Support**: Drag EM files from file browser or system directly to panels
+- **Drag & Drop Support**: Drag files from file browser or system directly to panels
 - **Multi-file Preview**: Open and compare multiple files simultaneously
+- **Multiple Workspaces**: Excel-like tabs for managing multiple workspace layouts
 - **Processing Mode**: Real-time image processing with visual workflow tree
   - Brightness, contrast, gamma adjustments (apply to ALL frames)
   - Filter operations: Gaussian blur, Median filter, Unsharp mask
+  - FFT Bandpass filter with stripe suppression
   - Snapshot system for comparing different processing paths
   - Visual node graph showing processing history/tree
-- **Data Visualization**: View 2D images, line profiles, histograms, and multi-dimensional data
+  - Export processed images
+- **Analysis Tools**:
+  - Line profile with width averaging and reference markers
+  - Histogram with statistics (min, max, mean, median, std)
+  - Distance measurements with draggable labels
+  - Polygon area measurement with automatic summation
+- **Calculators**:
+  - Electron Dose Calculator (e⁻/nm², flux, counts per frame)
+  - 2D Material Atom Calculator (MoS2, WS2, Graphene, etc.)
+- **Rich Text Memos**: Annotate images with formatted notes (bold, italic, underline)
+- **Data Visualization**: View 2D images, RGB images, line profiles, histograms, and multi-dimensional data
 - **Metadata Browser**: Explore comprehensive metadata including calibrations, timestamps, and instrument parameters
 - **Export Options**: Export data to various formats (TIFF, PNG, JPG, MP4 video, CSV, JSON)
 - **Modern UI**: Clean, dark-themed interface built with PySide6 (Qt), inspired by Nion Swift
 - **Scale Bar**: Automatic scale bar overlay with calibrated units
 - **Frame Navigation**: Playback controls for multi-frame sequences with video export
+- **Session Persistence**: Workspace layouts, panel settings, and overlays saved between sessions
 
 ## Installation
 
@@ -116,7 +129,9 @@ See `requirements.txt` for complete list with all transitive dependencies.
 
 ## Supported File Formats
 
-This application supports the following electron microscopy file formats:
+This application supports the following file formats:
+
+### Electron Microscopy Formats
 
 | Format | Extension | Description |
 |--------|-----------|-------------|
@@ -124,7 +139,16 @@ This application supports the following electron microscopy file formats:
 | **Gatan DM3** | `.dm3` | Gatan Digital Micrograph version 3 format |
 | **Gatan DM4** | `.dm4` | Gatan Digital Micrograph version 4 format |
 
-All formats are read into a unified data structure, allowing seamless viewing and comparison of data from different sources.
+### Standard Image Formats
+
+| Format | Extension | Description |
+|--------|-----------|-------------|
+| **PNG** | `.png` | Portable Network Graphics (8/16-bit, RGB/grayscale) |
+| **JPEG** | `.jpg`, `.jpeg` | Joint Photographic Experts Group |
+| **TIFF** | `.tif`, `.tiff` | Tagged Image File Format (8/16/32-bit) |
+| **BMP** | `.bmp` | Windows Bitmap |
+
+All formats are read into a unified data structure, allowing seamless viewing and comparison of data from different sources. RGB images are automatically detected and displayed with proper color rendering.
 
 ## nhdf File Format
 
@@ -267,22 +291,40 @@ Nion-EM-nhdf-Utility-GUI/
 ├── main.py                         # Application entry point
 ├── src/
 │   ├── core/
-│   │   ├── nhdf_reader.py          # nhdf file loading and parsing
+│   │   ├── nhdf_reader.py          # File loading (nhdf, dm3/dm4, PNG/JPG/TIFF/BMP)
 │   │   └── exporter.py             # Export functionality
 │   ├── gui/
 │   │   ├── main_window.py          # Standard single-panel window
-│   │   ├── workspace_main_window.py # Workspace mode with tiling
+│   │   ├── workspace_main_window.py # Workspace mode with tiling (DEFAULT)
 │   │   ├── workspace.py            # Free-tiling workspace manager
 │   │   ├── workspace_display_panel.py # Workspace display panels
-│   │   ├── file_browser.py         # File browser panel
+│   │   ├── workspace_tab_bar.py    # Excel-like workspace tabs
+│   │   ├── workspace_manager.py    # Workspace state management
+│   │   ├── unified_control_panel.py # Unified controls at top
+│   │   ├── file_browser.py         # File browser panel with drag support
 │   │   ├── display_panel.py        # Image display with frame controls
 │   │   ├── metadata_panel.py       # Metadata browser
-│   │   └── export_dialog.py        # Export configuration dialog
+│   │   ├── export_dialog.py        # Export configuration dialog
+│   │   ├── histogram_widget.py     # Histogram display
+│   │   ├── line_profile_*.py       # Line profile tools
+│   │   ├── measurement_overlay.py  # Distance measurement tool
+│   │   ├── memo_pad.py             # Rich text notes
+│   │   ├── dose_calculator.py      # Electron dose calculator
+│   │   ├── material_calculator.py  # 2D material atom calculator
+│   │   ├── preview_mode/           # Preview mode components
+│   │   │   ├── analysis_panel.py   # Analysis results (line profile, histogram)
+│   │   │   └── analysis_toolbar.py # Analysis tools toolbar
+│   │   └── processing_mode/        # Processing mode components
+│   │       ├── processing_mode_widget_v3.py # Main processing UI
+│   │       ├── processing_controls.py # Adjustment controls
+│   │       ├── processing_engine.py # Image processing algorithms
+│   │       ├── processing_export.py # Export processed images
+│   │       ├── node_graph_widget.py # Visual snapshot tree
+│   │       └── snapshot_manager.py  # Snapshot state management
 │   └── utils/                      # Utility modules
 ├── assets/                         # Application icons
-├── TestFiles/                      # Sample nhdf files (gitignored)
+├── TestFiles/                      # Sample files (gitignored)
 ├── requirements.txt                # Python dependencies
-├── DEVELOPMENT_PLAN.md             # Development roadmap
 └── README.md
 ```
 
