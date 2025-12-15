@@ -129,6 +129,59 @@ def create_dose_icon(size: int = 24, color: QColor = None) -> QIcon:
     return QIcon(pixmap)
 
 
+def create_pipette_icon(size: int = 24, color: QColor = None) -> QIcon:
+    """Create a pipette/eyedropper icon for auto-detection."""
+    if color is None:
+        color = QColor(200, 200, 200)
+
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+
+    pen = QPen(color)
+    pen.setWidth(2)
+    painter.setPen(pen)
+
+    # Draw pipette shape (diagonal dropper)
+    # Tip at bottom-left, bulb at top-right
+    margin = 3
+
+    # Pipette body (diagonal rectangle)
+    from PySide6.QtGui import QPolygonF
+    from PySide6.QtCore import QPointF
+
+    # Draw the pipette tube
+    painter.drawLine(margin + 4, size - margin - 4, size - margin - 4, margin + 4)
+
+    # Draw pipette tip (small triangle at bottom-left)
+    tip_points = [
+        QPointF(margin, size - margin),
+        QPointF(margin + 6, size - margin - 4),
+        QPointF(margin + 4, size - margin - 6),
+    ]
+    painter.setBrush(color)
+    painter.drawPolygon(QPolygonF(tip_points))
+
+    # Draw bulb at top-right (circle)
+    bulb_x = size - margin - 6
+    bulb_y = margin + 2
+    bulb_radius = 4
+    painter.setBrush(Qt.NoBrush)
+    painter.drawEllipse(int(bulb_x - bulb_radius), int(bulb_y - bulb_radius),
+                        bulb_radius * 2, bulb_radius * 2)
+
+    # Draw small drop inside tip
+    painter.setBrush(color)
+    drop_radius = 2
+    painter.drawEllipse(margin + 2 - drop_radius, size - margin - 2 - drop_radius,
+                        drop_radius * 2, drop_radius * 2)
+
+    painter.end()
+    return QIcon(pixmap)
+
+
 def create_memo_icon(size: int = 24, color: QColor = None) -> QIcon:
     """Create a sticky note / memo pad icon."""
     if color is None:
@@ -197,6 +250,7 @@ class MeasurementToolBar(QFrame):
     # Signals
     create_measurement = Signal()  # Emitted when create measurement is clicked
     create_polygon = Signal()  # Emitted when create polygon is clicked
+    create_pipette = Signal()  # Emitted when pipette auto-detect is clicked
     create_memo = Signal()  # Emitted when create memo is clicked
     open_dose_calculator = Signal()  # Emitted when dose calculator is clicked
     confirm_measurement = Signal()  # Emitted when confirm button is clicked
@@ -240,6 +294,15 @@ class MeasurementToolBar(QFrame):
         self._create_polygon_btn.setShortcut("P")
         self._create_polygon_btn.clicked.connect(self._on_create_polygon)
         layout.addWidget(self._create_polygon_btn)
+
+        # Create pipette auto-detect button with icon
+        self._create_pipette_btn = QToolButton()
+        self._create_pipette_btn.setIcon(create_pipette_icon(24, QColor(100, 255, 200)))  # Cyan-green
+        self._create_pipette_btn.setIconSize(QSize(20, 20))
+        self._create_pipette_btn.setToolTip("Auto-detect polygon (I)\nClick on dark region to detect boundary")
+        self._create_pipette_btn.setShortcut("I")
+        self._create_pipette_btn.clicked.connect(self._on_create_pipette)
+        layout.addWidget(self._create_pipette_btn)
 
         # Create memo pad button with icon
         self._create_memo_btn = QToolButton()
@@ -347,6 +410,11 @@ class MeasurementToolBar(QFrame):
         self._count_label.setText(str(self._measurement_count))
         self.create_polygon.emit()
 
+    def _on_create_pipette(self):
+        """Handle create pipette button click."""
+        # Don't increment count here - it will be incremented when polygon is created
+        self.create_pipette.emit()
+
     def _on_create_memo(self):
         """Handle create memo button click."""
         self.create_memo.emit()
@@ -452,6 +520,9 @@ class MeasurementToolBar(QFrame):
         icon_color = QColor(200, 200, 200) if self._is_dark_mode else QColor(80, 80, 80)
         self._create_btn.setIcon(create_measurement_icon(24, icon_color))
         self._create_polygon_btn.setIcon(create_polygon_icon(24, icon_color))
+        # Pipette icon uses cyan-green for visibility
+        pipette_color = QColor(100, 255, 200) if self._is_dark_mode else QColor(0, 180, 120)
+        self._create_pipette_btn.setIcon(create_pipette_icon(24, pipette_color))
         # Memo icon stays yellow/gold for sticky note appearance
         memo_color = QColor(255, 220, 100) if self._is_dark_mode else QColor(200, 170, 50)
         self._create_memo_btn.setIcon(create_memo_icon(24, memo_color))

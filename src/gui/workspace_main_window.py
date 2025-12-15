@@ -92,6 +92,7 @@ class WorkspaceMainWindow(QMainWindow):
         self._measurement_toolbar = MeasurementToolBar()
         self._measurement_toolbar.create_measurement.connect(self._on_create_measurement)
         self._measurement_toolbar.create_polygon.connect(self._on_create_polygon)
+        self._measurement_toolbar.create_pipette.connect(self._on_create_pipette)
         self._measurement_toolbar.create_memo.connect(self._on_create_memo)
         self._measurement_toolbar.open_dose_calculator.connect(self._on_show_dose_calculator)
         self._measurement_toolbar.clear_all.connect(self._on_clear_measurements)
@@ -1000,6 +1001,17 @@ class WorkspaceMainWindow(QMainWindow):
                 if hasattr(panel, 'display_panel') and panel.display_panel:
                     display = panel.display_panel
                     display.create_polygon_area()
+                    # Connect measurement signals to update toolbar
+                    self._connect_measurement_signals(display)
+
+    def _on_create_pipette(self):
+        """Handle create pipette button click for auto-detecting polygon regions."""
+        if self._workspace and self._workspace.selected_panel:
+            panel = self._workspace.selected_panel
+            if isinstance(panel, WorkspaceDisplayPanel):
+                if hasattr(panel, 'display_panel') and panel.display_panel:
+                    display = panel.display_panel
+                    display.activate_pipette_mode()
                     # Connect measurement signals to update toolbar
                     self._connect_measurement_signals(display)
 

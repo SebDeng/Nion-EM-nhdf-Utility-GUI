@@ -17,6 +17,7 @@ PySide6_Addons==6.10.1
 PySide6_Essentials==6.10.1
 python-dateutil==2.9.0.post0
 scipy==1.16.3
+scikit-image==0.25.2
 shiboken6==6.10.1
 six==1.17.0
 tifffile==2024.12.12

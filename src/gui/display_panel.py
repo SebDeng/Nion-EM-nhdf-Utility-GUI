@@ -23,6 +23,7 @@ from src.gui.measurement_overlay import MeasurementOverlay, MeasurementData
 from src.gui.memo_pad import MemoPadManager
 from src.gui.dose_label import DoseLabelManager
 from src.gui.material_label import MaterialLabelManager
+from src.gui.pipette_dialog import PipettePreviewDialog
 
 
 class ScaleBarItem(pg.GraphicsObject):
@@ -655,6 +656,7 @@ class DisplayPanel(QWidget):
         self._show_controls = show_controls
         self._line_profile_overlay: Optional[LineProfileOverlay] = None
         self._measurement_overlay: Optional[MeasurementOverlay] = None
+        self._pipette_mode_active = False  # For pipette auto-detect polygon tool
         self._memo_manager: Optional[MemoPadManager] = None
         self._dose_label_manager: Optional[DoseLabelManager] = None
         self._material_label_manager: Optional[MaterialLabelManager] = None
@@ -1190,6 +1192,98 @@ class DisplayPanel(QWidget):
             # Update snap points before creating polygon
             self._update_measurement_snap_points()
             self._measurement_overlay.create_polygon_area()
+
+    def activate_pipette_mode(self):
+        """
+        Activate pipette mode for auto-detecting polygon regions.
+        User clicks on a dark region and a polygon is auto-created from the boundary.
+        """
+        if self._data is None or self._image_item.image is None:
+            return
+
+        self._pipette_mode_active = True
+        # Change cursor to crosshair to indicate pipette mode
+        self._graphics_widget.setCursor(Qt.CrossCursor)
+
+        # Connect mouse click event
+        self._plot_item.scene().sigMouseClicked.connect(self._on_pipette_click)
+
+    def _on_pipette_click(self, event):
+        """Handle mouse click during pipette mode."""
+        if not self._pipette_mode_active:
+            return
+
+        # Only handle left click
+        if event.button() != Qt.LeftButton:
+            return
+
+        # Get click position in data coordinates
+        view_box = self._plot_item.getViewBox()
+        scene_pos = event.scenePos()
+        data_pos = view_box.mapSceneToView(scene_pos)
+
+        click_x = data_pos.x()
+        click_y = data_pos.y()
+
+        # Deactivate pipette mode
+        self._deactivate_pipette_mode()
+
+        # Get current frame image data
+        if self._data is None:
+            return
+
+        if self._data.num_frames > 1:
+            image_data = self._data.get_frame(self._current_frame)
+        else:
+            image_data = self._data.data
+
+        if image_data is None:
+            return
+
+        # Get calibration for the dialog
+        calibration = None
+        if self._data.dimensional_calibrations:
+            spatial_cals = self._data.dimensional_calibrations
+            if self._data.data_descriptor.is_sequence and len(spatial_cals) > 1:
+                spatial_cals = spatial_cals[1:]
+            if spatial_cals:
+                calibration = spatial_cals[0]
+
+        # Show pipette preview dialog
+        dialog = PipettePreviewDialog(
+            image_data,
+            click_x,
+            click_y,
+            calibration=calibration,
+            parent=self
+        )
+
+        # Connect signal to create polygon when confirmed
+        dialog.polygon_confirmed.connect(self._on_pipette_polygon_confirmed)
+
+        dialog.exec()
+
+    def _on_pipette_polygon_confirmed(self, vertices: list):
+        """Handle confirmed polygon from pipette dialog."""
+        if not self._measurement_overlay or not vertices:
+            return
+
+        # Set calibration if available
+        self._set_measurement_calibration()
+
+        # Create polygon from detected vertices
+        self._measurement_overlay.restore_polygon_measurement(vertices)
+
+    def _deactivate_pipette_mode(self):
+        """Deactivate pipette mode and restore normal cursor."""
+        self._pipette_mode_active = False
+        self._graphics_widget.setCursor(Qt.ArrowCursor)
+
+        # Disconnect mouse click event
+        try:
+            self._plot_item.scene().sigMouseClicked.disconnect(self._on_pipette_click)
+        except (TypeError, RuntimeError):
+            pass  # Already disconnected or scene doesn't exist
 
     def _set_measurement_calibration(self):
         """Set the calibration on the measurement overlay."""
