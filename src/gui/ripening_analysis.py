@@ -387,8 +387,9 @@ class RipeningAnalysisDialog(QDialog):
             polygon_count = 0
             display_panel = getattr(panel, 'display_panel', None)
             if display_panel and hasattr(display_panel, '_measurement_overlay') and display_panel._measurement_overlay:
-                data = display_panel._measurement_overlay.get_measurements_data()
-                polygon_count = len(data.get('polygons', []))
+                measurements = display_panel._measurement_overlay.get_measurements_data()
+                # get_measurements_data returns a list of dicts with 'type' field
+                polygon_count = sum(1 for m in measurements if m.get('type') == 'polygon')
 
             label = f"{file_name} ({polygon_count} polygons)"
             self._before_combo.addItem(label, panel)
@@ -429,11 +430,13 @@ class RipeningAnalysisDialog(QDialog):
             if calibs and len(calibs) >= 2:
                 scale_nm = calibs[0].scale  # nm per pixel
 
-        # Get measurement data
-        data = display_panel._measurement_overlay.get_measurements_data()
+        # Get measurement data - returns list of dicts with 'type' field
+        measurements = display_panel._measurement_overlay.get_measurements_data()
 
-        for poly_data in data.get('polygons', []):
-            vertices = poly_data.get('vertices', [])
+        for measurement in measurements:
+            if measurement.get('type') != 'polygon':
+                continue
+            vertices = measurement.get('vertices', [])
             if len(vertices) < 3:
                 continue
 
