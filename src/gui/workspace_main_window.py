@@ -33,6 +33,7 @@ from src.gui.measurement_toolbar import MeasurementToolBar
 from src.gui.dose_calculator import DoseCalculatorDialog
 from src.gui.material_calculator import MaterialCalculatorDialog
 from src.gui.workspace_tab_bar import WorkspaceTabBar
+from src.gui.ripening_analysis import RipeningAnalysisDialog
 
 
 class WorkspaceMainWindow(QMainWindow):
@@ -329,6 +330,12 @@ class WorkspaceMainWindow(QMainWindow):
         material_calc_action.setShortcut(QKeySequence("Ctrl+M"))
         material_calc_action.triggered.connect(self._on_show_material_calculator)
         tools_menu.addAction(material_calc_action)
+
+        tools_menu.addSeparator()
+
+        ripening_action = QAction("&Ripening Analysis...", self)
+        ripening_action.triggered.connect(self._on_show_ripening_analysis)
+        tools_menu.addAction(ripening_action)
 
         # Export menu
         export_menu = menubar.addMenu("&Export")
@@ -1675,6 +1682,11 @@ class WorkspaceMainWindow(QMainWindow):
             return
 
         panel.display_panel.add_material_label(material_data)
+
+    def _on_show_ripening_analysis(self):
+        """Show the ripening analysis dialog."""
+        dialog = RipeningAnalysisDialog(self._workspace, parent=self)
+        dialog.exec()
 
     def _on_about(self):
         """Show about dialog."""
