@@ -376,17 +376,18 @@ class RipeningAnalysisDialog(QDialog):
         panels = self._get_all_panels()
 
         for i, panel in enumerate(panels):
-            # Get panel info
+            # Get panel info - WorkspaceDisplayPanel has current_file_path attribute
             file_name = "Empty Panel"
-            if hasattr(panel, '_current_file') and panel._current_file:
-                file_name = os.path.basename(panel._current_file)
-            elif hasattr(panel, 'get_display_title'):
-                file_name = panel.get_display_title() or f"Panel {i+1}"
+            if hasattr(panel, 'current_file_path') and panel.current_file_path:
+                file_name = os.path.basename(panel.current_file_path)
+            elif hasattr(panel, 'title_label') and panel.title_label:
+                file_name = panel.title_label.text() or f"Panel {i+1}"
 
-            # Count polygons
+            # Count polygons - access through display_panel._measurement_overlay
             polygon_count = 0
-            if hasattr(panel, '_measurement_overlay') and panel._measurement_overlay:
-                data = panel._measurement_overlay.get_measurements_data()
+            display_panel = getattr(panel, 'display_panel', None)
+            if display_panel and hasattr(display_panel, '_measurement_overlay') and display_panel._measurement_overlay:
+                data = display_panel._measurement_overlay.get_measurements_data()
                 polygon_count = len(data.get('polygons', []))
 
             label = f"{file_name} ({polygon_count} polygons)"
@@ -402,24 +403,12 @@ class RipeningAnalysisDialog(QDialog):
         """Get all display panels from workspace."""
         panels = []
 
-        def collect_panels(widget):
-            if widget is None:
-                return
-
-            # Check if it's a display panel
-            if hasattr(widget, '_measurement_overlay'):
-                panels.append(widget)
-                return
-
-            # Check children for QSplitter
-            if hasattr(widget, 'count'):
-                for i in range(widget.count()):
-                    child = widget.widget(i) if hasattr(widget, 'widget') else None
-                    if child:
-                        collect_panels(child)
-
-        if self._workspace:
-            collect_panels(self._workspace)
+        if self._workspace and hasattr(self._workspace, 'panels'):
+            # WorkspaceWidget has a panels list containing WorkspaceDisplayPanel objects
+            for panel in self._workspace.panels:
+                # WorkspaceDisplayPanel has display_panel which contains _measurement_overlay
+                if hasattr(panel, 'display_panel') and panel.display_panel:
+                    panels.append(panel)
 
         return panels
 
@@ -427,18 +416,21 @@ class RipeningAnalysisDialog(QDialog):
         """Extract polygon data from a panel's measurement overlay."""
         polygons = []
 
-        if not hasattr(panel, '_measurement_overlay') or not panel._measurement_overlay:
+        # WorkspaceDisplayPanel has display_panel which has _measurement_overlay
+        display_panel = getattr(panel, 'display_panel', None)
+        if not display_panel or not hasattr(display_panel, '_measurement_overlay') or not display_panel._measurement_overlay:
             return polygons
 
-        # Get calibration
+        # Get calibration from WorkspaceDisplayPanel.current_data
         scale_nm = 1.0  # Default: pixels
-        if hasattr(panel, '_nhdf_data') and panel._nhdf_data:
-            calibs = panel._nhdf_data.dimensional_calibrations
+        current_data = getattr(panel, 'current_data', None)
+        if current_data and hasattr(current_data, 'dimensional_calibrations'):
+            calibs = current_data.dimensional_calibrations
             if calibs and len(calibs) >= 2:
                 scale_nm = calibs[0].scale  # nm per pixel
 
         # Get measurement data
-        data = panel._measurement_overlay.get_measurements_data()
+        data = display_panel._measurement_overlay.get_measurements_data()
 
         for poly_data in data.get('polygons', []):
             vertices = poly_data.get('vertices', [])
