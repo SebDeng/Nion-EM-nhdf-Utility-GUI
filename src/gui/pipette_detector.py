@@ -31,7 +31,7 @@ class PipetteDetector:
 
     def __init__(self):
         self.min_area_px = 10  # Minimum region area in pixels
-        self.max_vertices = 40  # Maximum polygon vertices
+        self.max_vertices = 20  # Maximum polygon vertices (balanced for storage/accuracy)
         self.default_tolerance = 0.10  # Default threshold tolerance (10%)
 
     def detect_region(
