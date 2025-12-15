@@ -1374,12 +1374,25 @@ class MeasurementOverlay(QObject):
         # Calculate initial polygon position (pentagon shape centered in image)
         center_x = width / 2
         center_y = height / 2
-        radius = min(width, height) * 0.2  # 20% of smaller dimension
+        radius = min(width, height) * 0.15  # 15% of smaller dimension
 
-        # Offset for multiple polygons
-        offset = len(self.active_polygon_rois) * 0.05 * min(width, height)
-        center_x += offset
-        center_y += offset
+        # Offset for multiple polygons - use cycling pattern to avoid corner crunching
+        # Cycle through a grid of positions within the central area
+        polygon_count = len(self.active_polygon_rois)
+        grid_size = 4  # 4x4 grid of positions
+        grid_spacing = min(width, height) * 0.12  # 12% spacing between grid positions
+
+        # Calculate grid position (cycles every grid_size^2 polygons)
+        grid_index = polygon_count % (grid_size * grid_size)
+        grid_row = grid_index // grid_size
+        grid_col = grid_index % grid_size
+
+        # Center the grid around the image center
+        grid_offset_x = (grid_col - (grid_size - 1) / 2) * grid_spacing
+        grid_offset_y = (grid_row - (grid_size - 1) / 2) * grid_spacing
+
+        center_x += grid_offset_x
+        center_y += grid_offset_y
 
         # Create initial vertices (pentagon)
         num_vertices = 5
