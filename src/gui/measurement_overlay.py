@@ -3,7 +3,7 @@ Measurement overlay for display panels.
 Provides distance measurement tools with visual feedback.
 """
 
-from PySide6.QtCore import Signal, QObject, Qt, QPointF
+from PySide6.QtCore import Signal, QObject, Qt, QPointF, QTimer
 from PySide6.QtGui import QPen, QColor, QFont, QPainterPath
 from PySide6.QtWidgets import QApplication, QGraphicsItem
 import pyqtgraph as pg
@@ -827,6 +827,18 @@ class MeasurementOverlay(QObject):
 
         # Colors for measurements (cycle through these)
         self.measurement_colors = ['lime', 'cyan', 'magenta', 'yellow', 'orange', 'red']
+
+        # PERFORMANCE: Debounce timer for polygon updates during drag
+        # This batches rapid updates into fewer repaints
+        self._polygon_update_timer = QTimer()
+        self._polygon_update_timer.setSingleShot(True)
+        self._polygon_update_timer.setInterval(16)  # ~60fps max update rate
+        self._pending_polygon_updates = set()  # ROIs needing update
+        self._polygon_update_timer.timeout.connect(self._process_pending_polygon_updates)
+
+        # PERFORMANCE: Track which polygon has visible handles
+        # Only one polygon shows handles at a time to reduce render load
+        self._polygon_with_visible_handles = None
         self.color_index = 0
 
         # Calibration info (set by display panel)
@@ -890,6 +902,9 @@ class MeasurementOverlay(QObject):
         # Store metadata on the ROI
         line_roi._measurement_color = color
         line_roi._measurement_id = self.measurement_id_counter
+
+        # PERFORMANCE: Enable caching for better rendering performance
+        line_roi.setCacheMode(QGraphicsItem.CacheMode.DeviceCoordinateCache)
 
         # Make handles more visible
         handles = line_roi.getHandles()
@@ -1429,6 +1444,9 @@ class MeasurementOverlay(QObject):
         polygon_roi._polygon_color = color
         polygon_roi._polygon_id = self.measurement_id_counter
 
+        # PERFORMANCE: Enable caching for better rendering performance
+        polygon_roi.setCacheMode(QGraphicsItem.CacheMode.DeviceCoordinateCache)
+
         # Add to plot
         self.plot_item.addItem(polygon_roi)
         polygon_roi.setZValue(900 + len(self.active_polygon_rois))
@@ -1452,34 +1470,55 @@ class MeasurementOverlay(QObject):
         polygon_roi.sigRegionChanged.connect(lambda: self._on_polygon_changed_lightweight(polygon_roi))
         polygon_roi.sigRegionChangeFinished.connect(lambda: self._on_polygon_change_finished(polygon_roi))
 
+        # PERFORMANCE: Connect click and hover to show handles only when needed
+        polygon_roi.sigClicked.connect(lambda roi, ev: self._on_polygon_clicked(polygon_roi))
+        polygon_roi.sigHoverEvent.connect(lambda hovering: self._on_polygon_hover(polygon_roi, hovering))
+
+        # PERFORMANCE: Hide handles by default - they show on click/hover
+        self._hide_polygon_handles(polygon_roi)
+
         # Emit initial measurement
         self._emit_polygon_area_data(polygon_roi)
 
     def _on_polygon_changed_lightweight(self, polygon_roi: pg.PolyLineROI):
-        """Lightweight update during polygon drag - only update label, no signal emission."""
+        """Lightweight update during polygon drag - debounced for performance."""
         if polygon_roi not in self.active_polygon_rois:
             return
 
-        # Get vertices and calculate area/centroid (fast operations)
-        vertices = self._get_polygon_vertices(polygon_roi)
-        if len(vertices) < 3:
-            return
+        # PERFORMANCE: Queue update and debounce
+        self._pending_polygon_updates.add(polygon_roi)
+        if not self._polygon_update_timer.isActive():
+            self._polygon_update_timer.start()
 
-        area_px = self._calculate_polygon_area(vertices)
-        centroid = self._calculate_polygon_centroid(vertices)
+    def _process_pending_polygon_updates(self):
+        """Process all pending polygon updates in one batch."""
+        pending = self._pending_polygon_updates.copy()
+        self._pending_polygon_updates.clear()
 
-        # Get calibrated area if available
-        area_nm2 = None
-        if self.calibration and hasattr(self.calibration, 'scale'):
-            area_nm2 = area_px * (self.calibration.scale ** 2)
+        for polygon_roi in pending:
+            if polygon_roi not in self.active_polygon_rois:
+                continue
 
-        # Update label with batched update (single repaint)
-        if polygon_roi in self._polygon_labels:
-            label = self._polygon_labels[polygon_roi]
-            label.update_position_and_text(
-                centroid[0], centroid[1],
-                self._format_area_text(area_px, area_nm2)
-            )
+            # Get vertices and calculate area/centroid (fast operations)
+            vertices = self._get_polygon_vertices(polygon_roi)
+            if len(vertices) < 3:
+                continue
+
+            area_px = self._calculate_polygon_area(vertices)
+            centroid = self._calculate_polygon_centroid(vertices)
+
+            # Get calibrated area if available
+            area_nm2 = None
+            if self.calibration and hasattr(self.calibration, 'scale'):
+                area_nm2 = area_px * (self.calibration.scale ** 2)
+
+            # Update label
+            if polygon_roi in self._polygon_labels:
+                label = self._polygon_labels[polygon_roi]
+                label.update_position_and_text(
+                    centroid[0], centroid[1],
+                    self._format_area_text(area_px, area_nm2)
+                )
 
     def _on_polygon_change_finished(self, polygon_roi: pg.PolyLineROI):
         """Handle when polygon ROI change is finished - emit full data."""
@@ -1602,6 +1641,51 @@ class MeasurementOverlay(QObject):
         """Get the number of active polygons."""
         return len(self.active_polygon_rois)
 
+    # ==================== PERFORMANCE: Handle Visibility ====================
+
+    def _hide_polygon_handles(self, polygon_roi):
+        """Hide all handles on a polygon ROI for better performance."""
+        for handle in polygon_roi.getHandles():
+            handle.hide()
+
+    def _show_polygon_handles(self, polygon_roi):
+        """Show all handles on a polygon ROI."""
+        for handle in polygon_roi.getHandles():
+            handle.show()
+
+    def _set_active_polygon(self, polygon_roi):
+        """Set which polygon shows handles (only one at a time for performance)."""
+        # Hide handles on previously active polygon
+        if self._polygon_with_visible_handles is not None:
+            if self._polygon_with_visible_handles in self.active_polygon_rois:
+                self._hide_polygon_handles(self._polygon_with_visible_handles)
+
+        # Show handles on new active polygon
+        self._polygon_with_visible_handles = polygon_roi
+        if polygon_roi is not None:
+            self._show_polygon_handles(polygon_roi)
+
+    def _on_polygon_hover(self, polygon_roi, hovering: bool):
+        """Handle polygon hover - show handles only when hovered."""
+        if hovering:
+            self._set_active_polygon(polygon_roi)
+        # Don't hide on hover exit - keep handles visible until another polygon is hovered
+
+    def _on_polygon_clicked(self, polygon_roi):
+        """Handle polygon click - show handles when clicked."""
+        self._set_active_polygon(polygon_roi)
+
+    def hide_all_polygon_handles(self):
+        """Hide handles on all polygons (call when panning/zooming for performance)."""
+        for polygon_roi in self.active_polygon_rois:
+            self._hide_polygon_handles(polygon_roi)
+        self._polygon_with_visible_handles = None
+
+    def show_all_polygon_handles(self):
+        """Show handles on all polygons."""
+        for polygon_roi in self.active_polygon_rois:
+            self._show_polygon_handles(polygon_roi)
+
     def get_total_measurement_count(self) -> int:
         """Get total count of all measurements (lines + polygons)."""
         return len(self.active_line_rois) + len(self.active_polygon_rois) + len(self.completed_measurements)
@@ -1668,6 +1752,9 @@ class MeasurementOverlay(QObject):
         # Store metadata
         line_roi._measurement_color = color
         line_roi._measurement_id = self.measurement_id_counter
+
+        # PERFORMANCE: Enable caching for better rendering performance
+        line_roi.setCacheMode(QGraphicsItem.CacheMode.DeviceCoordinateCache)
 
         # Make handles visible
         handles = line_roi.getHandles()
@@ -1746,6 +1833,9 @@ class MeasurementOverlay(QObject):
         polygon_roi._measurement_color = color
         polygon_roi._measurement_id = self.polygon_id_counter
 
+        # PERFORMANCE: Enable caching for better rendering performance
+        polygon_roi.setCacheMode(QGraphicsItem.CacheMode.DeviceCoordinateCache)
+
         # Make handles visible
         handles = polygon_roi.getHandles()
         for handle in handles:
@@ -1774,6 +1864,13 @@ class MeasurementOverlay(QObject):
         # Connect signals
         polygon_roi.sigRegionChanged.connect(lambda: self._on_polygon_changed_lightweight(polygon_roi))
         polygon_roi.sigRegionChangeFinished.connect(lambda: self._on_polygon_change_finished(polygon_roi))
+
+        # PERFORMANCE: Connect click and hover to show handles only when needed
+        polygon_roi.sigClicked.connect(lambda roi, ev: self._on_polygon_clicked(polygon_roi))
+        polygon_roi.sigHoverEvent.connect(lambda hovering: self._on_polygon_hover(polygon_roi, hovering))
+
+        # PERFORMANCE: Hide handles by default - they show on click/hover
+        self._hide_polygon_handles(polygon_roi)
 
         # Update label with calculated area
         self._on_polygon_changed_lightweight(polygon_roi)
