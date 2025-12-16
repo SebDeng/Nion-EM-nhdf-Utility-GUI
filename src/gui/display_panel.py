@@ -1333,16 +1333,20 @@ class DisplayPanel(QWidget):
         # Track if we found a nearby polygon handle
         nearby_handle = None
         nearby_handle_info = None
+        # Track if click is inside a polygon
+        polygon_at_click = None
+        click_data_pos = None
 
-        # Check if click is near a polygon handle to add handle-specific options
+        # Check if click is near a polygon handle or inside a polygon
         if self._measurement_overlay and hasattr(self, '_plot_item') and self._plot_item:
             try:
                 view_box = self._plot_item.getViewBox()
                 scene_pos = view_box.mapSceneToView(
                     self._graphics_widget.mapToScene(pos)
                 )
+                click_data_pos = (scene_pos.x(), scene_pos.y())
 
-                # Check all polygon ROIs
+                # Check all polygon ROIs for handle proximity
                 for polygon_roi in self._measurement_overlay.active_polygon_rois:
                     # Check if click is near any handle
                     for handle in polygon_roi.getHandles():
@@ -1361,6 +1365,11 @@ class DisplayPanel(QWidget):
                             break
                     if nearby_handle:
                         break
+
+                # Check if click is inside any polygon (for delete option)
+                polygon_at_click = self._measurement_overlay.find_polygon_at_point(
+                    scene_pos.x(), scene_pos.y()
+                )
             except Exception:
                 pass
 
@@ -1372,6 +1381,12 @@ class DisplayPanel(QWidget):
             if len(polygon_roi.getHandles()) > 3:
                 remove_handle_action = menu.addAction("Remove Vertex")
                 menu.addSeparator()
+
+        # If click is inside a polygon, add delete option
+        delete_polygon_action = None
+        if polygon_at_click is not None:
+            delete_polygon_action = menu.addAction("Delete Polygon")
+            menu.addSeparator()
 
         # Add Memo action
         add_memo_action = menu.addAction("Add Memo")
@@ -1389,7 +1404,10 @@ class DisplayPanel(QWidget):
         action = menu.exec(self._graphics_widget.mapToGlobal(pos))
 
         # Handle actions
-        if action == remove_handle_action and nearby_handle_info:
+        if action == delete_polygon_action and polygon_at_click is not None:
+            # Delete the polygon
+            self._measurement_overlay.delete_polygon(polygon_at_click)
+        elif action == remove_handle_action and nearby_handle_info:
             polygon_roi, handle = nearby_handle_info
             # Remove the handle from the polygon
             try:

@@ -97,7 +97,9 @@ class WorkspaceMainWindow(QMainWindow):
         self._measurement_toolbar.open_dose_calculator.connect(self._on_show_dose_calculator)
         self._measurement_toolbar.clear_all.connect(self._on_clear_measurements)
         self._measurement_toolbar.clear_last.connect(self._on_clear_last_measurement)
+        self._measurement_toolbar.delete_selected.connect(self._on_delete_selected_measurement)
         self._measurement_toolbar.toggle_labels.connect(self._on_toggle_measurement_labels)
+        self._measurement_toolbar.toggle_handles.connect(self._on_toggle_measurement_handles)
         self._measurement_toolbar.font_size_changed.connect(self._on_measurement_font_size_changed)
         top_toolbar_layout.addWidget(self._measurement_toolbar, 1)  # Give stretch factor to fill space
 
@@ -1058,6 +1060,23 @@ class WorkspaceMainWindow(QMainWindow):
                 if hasattr(panel, 'display_panel') and panel.display_panel:
                     panel.display_panel.clear_last_measurement()
 
+    def _on_delete_selected_measurement(self):
+        """Handle delete selected measurement button click."""
+        # Try to delete selected measurement from any panel
+        if self._workspace:
+            for panel in self._workspace.panels:
+                if isinstance(panel, WorkspaceDisplayPanel):
+                    if hasattr(panel, 'display_panel') and panel.display_panel:
+                        dp = panel.display_panel
+                        if hasattr(dp, '_measurement_overlay') and dp._measurement_overlay:
+                            overlay = dp._measurement_overlay
+                            if overlay.has_selection():
+                                if overlay.delete_selected():
+                                    # Update measurement count
+                                    count = overlay.get_total_measurement_count()
+                                    self._measurement_toolbar.set_measurement_count(count)
+                                    return  # Deleted something, stop looking
+
     def _on_measurement_updated(self, measurement_data):
         """Handle measurement data updates from display panels."""
         from src.gui.measurement_overlay import MeasurementData
@@ -1090,6 +1109,24 @@ class WorkspaceMainWindow(QMainWindow):
                         dp = panel.display_panel
                         if hasattr(dp, '_measurement_overlay') and dp._measurement_overlay:
                             dp._measurement_overlay.set_labels_visible(visible)
+
+    def _on_toggle_measurement_handles(self, visible: bool):
+        """Handle toggle handles checkbox from measurement toolbar.
+
+        PERFORMANCE: Hiding polygon handles dramatically improves pan/zoom speed
+        when many polygons are present.
+        """
+        if self._workspace:
+            for panel in self._workspace.panels:
+                if isinstance(panel, WorkspaceDisplayPanel):
+                    if hasattr(panel, 'display_panel') and panel.display_panel:
+                        dp = panel.display_panel
+                        if hasattr(dp, '_measurement_overlay') and dp._measurement_overlay:
+                            overlay = dp._measurement_overlay
+                            if visible:
+                                overlay.show_all_polygon_handles()
+                            else:
+                                overlay.hide_all_polygon_handles()
 
     def _on_measurement_font_size_changed(self, size: int):
         """Handle font size change from measurement toolbar."""

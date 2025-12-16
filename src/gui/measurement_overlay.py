@@ -5,7 +5,7 @@ Provides distance measurement tools with visual feedback.
 
 from PySide6.QtCore import Signal, QObject, Qt, QPointF, QTimer
 from PySide6.QtGui import QPen, QColor, QFont, QPainterPath
-from PySide6.QtWidgets import QApplication, QGraphicsItem
+from PySide6.QtWidgets import QApplication, QGraphicsItem, QMenu
 import pyqtgraph as pg
 import numpy as np
 from typing import Optional, Tuple, List
@@ -839,6 +839,9 @@ class MeasurementOverlay(QObject):
         # PERFORMANCE: Track which polygon has visible handles
         # Only one polygon shows handles at a time to reduce render load
         self._polygon_with_visible_handles = None
+        self._selected_polygon = None  # Currently selected polygon (for Delete key)
+        self._selected_line = None  # Currently selected line (for Delete key)
+        self._last_active_polygon = None  # Last polygon interacted with (persists even when handles hidden)
         self.color_index = 0
 
         # Calibration info (set by display panel)
@@ -946,6 +949,9 @@ class MeasurementOverlay(QObject):
         # Connect to ROI changes
         line_roi.sigRegionChanged.connect(lambda: self._on_line_changed(line_roi))
         line_roi.sigRegionChangeFinished.connect(lambda: self._on_line_change_finished(line_roi))
+
+        # Connect click for right-click context menu
+        line_roi.sigClicked.connect(lambda roi, ev: self._on_line_clicked(line_roi, ev))
 
         # Emit initial measurement and update label
         self._emit_measurement_data_for_roi(line_roi)
@@ -1471,7 +1477,8 @@ class MeasurementOverlay(QObject):
         polygon_roi.sigRegionChangeFinished.connect(lambda: self._on_polygon_change_finished(polygon_roi))
 
         # PERFORMANCE: Connect click and hover to show handles only when needed
-        polygon_roi.sigClicked.connect(lambda roi, ev: self._on_polygon_clicked(polygon_roi))
+        # Pass event to handler for right-click context menu
+        polygon_roi.sigClicked.connect(lambda roi, ev: self._on_polygon_clicked(polygon_roi, ev))
         polygon_roi.sigHoverEvent.connect(lambda hovering: self._on_polygon_hover(polygon_roi, hovering))
 
         # PERFORMANCE: Hide handles by default - they show on click/hover
@@ -1577,6 +1584,40 @@ class MeasurementOverlay(QObject):
         cy = sum(v[1] for v in vertices) / n
         return (cx, cy)
 
+    def _point_in_polygon(self, point: Tuple[float, float], vertices: List[Tuple[float, float]]) -> bool:
+        """Check if a point is inside a polygon using ray casting algorithm."""
+        x, y = point
+        n = len(vertices)
+        if n < 3:
+            return False
+
+        inside = False
+        j = n - 1
+        for i in range(n):
+            xi, yi = vertices[i]
+            xj, yj = vertices[j]
+
+            if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
+                inside = not inside
+            j = i
+
+        return inside
+
+    def find_polygon_at_point(self, x: float, y: float):
+        """Find which polygon contains the given point.
+
+        Args:
+            x, y: Point coordinates in data/image coordinates
+
+        Returns:
+            The polygon ROI if found, None otherwise
+        """
+        for polygon_roi in self.active_polygon_rois:
+            vertices = self._get_polygon_vertices(polygon_roi)
+            if self._point_in_polygon((x, y), vertices):
+                return polygon_roi
+        return None
+
     def _emit_polygon_area_data(self, polygon_roi: pg.PolyLineROI):
         """Calculate and emit polygon area data."""
         if polygon_roi is None:
@@ -1664,6 +1705,8 @@ class MeasurementOverlay(QObject):
         self._polygon_with_visible_handles = polygon_roi
         if polygon_roi is not None:
             self._show_polygon_handles(polygon_roi)
+            # Track last active polygon for deletion (persists even when handles hidden globally)
+            self._last_active_polygon = polygon_roi
 
     def _on_polygon_hover(self, polygon_roi, hovering: bool):
         """Handle polygon hover - show handles only when hovered."""
@@ -1671,9 +1714,17 @@ class MeasurementOverlay(QObject):
             self._set_active_polygon(polygon_roi)
         # Don't hide on hover exit - keep handles visible until another polygon is hovered
 
-    def _on_polygon_clicked(self, polygon_roi):
-        """Handle polygon click - show handles when clicked."""
+    def _on_polygon_clicked(self, polygon_roi, event=None):
+        """Handle polygon click - select polygon (show handles)."""
         self._set_active_polygon(polygon_roi)
+        # Store as selected for Delete key handling
+        self._selected_polygon = polygon_roi
+
+    def _on_line_clicked(self, line_roi, event=None):
+        """Handle line click - select line for Delete key."""
+        self._selected_line = line_roi
+        # Deselect polygon when line is selected
+        self._selected_polygon = None
 
     def hide_all_polygon_handles(self):
         """Hide handles on all polygons (call when panning/zooming for performance)."""
@@ -1689,6 +1740,128 @@ class MeasurementOverlay(QObject):
     def get_total_measurement_count(self) -> int:
         """Get total count of all measurements (lines + polygons)."""
         return len(self.active_line_rois) + len(self.active_polygon_rois) + len(self.completed_measurements)
+
+    def delete_polygon(self, polygon_roi):
+        """Delete a specific polygon ROI."""
+        if polygon_roi not in self.active_polygon_rois:
+            return
+
+        # Remove from list
+        self.active_polygon_rois.remove(polygon_roi)
+
+        # Remove label if exists
+        if polygon_roi in self._polygon_labels:
+            label = self._polygon_labels.pop(polygon_roi)
+            self.plot_item.removeItem(label)
+
+        # Remove from plot
+        self.plot_item.removeItem(polygon_roi)
+
+        # Clear all references to this polygon
+        if self._polygon_with_visible_handles == polygon_roi:
+            self._polygon_with_visible_handles = None
+        if self._last_active_polygon == polygon_roi:
+            self._last_active_polygon = None
+        if self._selected_polygon == polygon_roi:
+            self._selected_polygon = None
+
+        # Emit total area update
+        self._emit_total_polygon_area()
+
+    def delete_line(self, line_roi):
+        """Delete a specific line ROI."""
+        if line_roi not in self.active_line_rois:
+            return
+
+        # Remove from list
+        self.active_line_rois.remove(line_roi)
+
+        # Remove label if exists
+        if line_roi in self._line_labels:
+            label = self._line_labels.pop(line_roi)
+            self.plot_item.removeItem(label)
+
+        # Remove from plot
+        self.plot_item.removeItem(line_roi)
+
+        # Clear selection if this was selected
+        if self._selected_line == line_roi:
+            self._selected_line = None
+
+    def delete_selected(self) -> bool:
+        """Delete the currently selected polygon or line.
+
+        Uses multiple selection indicators since sigClicked doesn't fire reliably.
+
+        Returns:
+            True if something was deleted, False otherwise.
+        """
+        # Try polygon with visible handles first
+        if self._polygon_with_visible_handles is not None:
+            polygon_to_delete = self._polygon_with_visible_handles
+            self._polygon_with_visible_handles = None
+            self._selected_polygon = None
+            self._last_active_polygon = None
+            self.delete_polygon(polygon_to_delete)
+            return True
+        # Try last active polygon (persists even when handles globally hidden)
+        elif self._last_active_polygon is not None and self._last_active_polygon in self.active_polygon_rois:
+            polygon_to_delete = self._last_active_polygon
+            self._last_active_polygon = None
+            self._selected_polygon = None
+            self.delete_polygon(polygon_to_delete)
+            return True
+        # Fallback to explicit selection
+        elif self._selected_polygon is not None:
+            polygon_to_delete = self._selected_polygon
+            self._selected_polygon = None
+            self.delete_polygon(polygon_to_delete)
+            return True
+        elif self._selected_line is not None:
+            line_to_delete = self._selected_line
+            self._selected_line = None
+            self.delete_line(line_to_delete)
+            return True
+        return False
+
+    def has_selection(self) -> bool:
+        """Check if there's a selected polygon or line."""
+        return (self._polygon_with_visible_handles is not None or
+                self._last_active_polygon is not None or
+                self._selected_polygon is not None or
+                self._selected_line is not None)
+
+    def _show_polygon_context_menu(self, polygon_roi, event):
+        """Show context menu for polygon with delete option."""
+        menu = QMenu()
+
+        delete_action = menu.addAction("Delete Polygon")
+        delete_action.triggered.connect(lambda: self.delete_polygon(polygon_roi))
+
+        # Get screen position from the event
+        if hasattr(event, 'screenPos'):
+            screen_pos = event.screenPos()
+        else:
+            # Fallback: use cursor position
+            screen_pos = QApplication.instance().cursor().pos()
+
+        menu.exec_(screen_pos.toPoint() if hasattr(screen_pos, 'toPoint') else screen_pos)
+
+    def _show_line_context_menu(self, line_roi, event):
+        """Show context menu for line with delete option."""
+        menu = QMenu()
+
+        delete_action = menu.addAction("Delete Measurement")
+        delete_action.triggered.connect(lambda: self.delete_line(line_roi))
+
+        # Get screen position from the event
+        if hasattr(event, 'screenPos'):
+            screen_pos = event.screenPos()
+        else:
+            # Fallback: use cursor position
+            screen_pos = QApplication.instance().cursor().pos()
+
+        menu.exec_(screen_pos.toPoint() if hasattr(screen_pos, 'toPoint') else screen_pos)
 
     def get_total_polygon_area(self) -> Tuple[float, Optional[float]]:
         """
@@ -1796,6 +1969,9 @@ class MeasurementOverlay(QObject):
         line_roi.sigRegionChanged.connect(lambda: self._on_line_changed(line_roi))
         line_roi.sigRegionChangeFinished.connect(lambda: self._on_line_change_finished(line_roi))
 
+        # Connect click for right-click context menu
+        line_roi.sigClicked.connect(lambda roi, ev: self._on_line_clicked(line_roi, ev))
+
         # Update label with measurement
         self._emit_measurement_data_for_roi(line_roi)
 
@@ -1866,7 +2042,8 @@ class MeasurementOverlay(QObject):
         polygon_roi.sigRegionChangeFinished.connect(lambda: self._on_polygon_change_finished(polygon_roi))
 
         # PERFORMANCE: Connect click and hover to show handles only when needed
-        polygon_roi.sigClicked.connect(lambda roi, ev: self._on_polygon_clicked(polygon_roi))
+        # Pass event to handler for right-click context menu
+        polygon_roi.sigClicked.connect(lambda roi, ev: self._on_polygon_clicked(polygon_roi, ev))
         polygon_roi.sigHoverEvent.connect(lambda hovering: self._on_polygon_hover(polygon_roi, hovering))
 
         # PERFORMANCE: Hide handles by default - they show on click/hover

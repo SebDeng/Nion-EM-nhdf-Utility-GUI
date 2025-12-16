@@ -4,7 +4,7 @@ Provides distance measurement tools with controls.
 """
 
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QPushButton, QToolButton, QCheckBox, QSpinBox
+    QFrame, QHBoxLayout, QLabel, QPushButton, QToolButton, QCheckBox, QSpinBox, QComboBox
 )
 from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtGui import QIcon, QPainter, QPixmap, QPen, QColor
@@ -256,7 +256,9 @@ class MeasurementToolBar(QFrame):
     confirm_measurement = Signal()  # Emitted when confirm button is clicked
     clear_all = Signal()  # Emitted when clear all button is clicked
     clear_last = Signal()  # Emitted when clear last button is clicked
+    delete_selected = Signal()  # Emitted when delete selected button is clicked
     toggle_labels = Signal(bool)  # Emitted when show labels checkbox is toggled
+    toggle_handles = Signal(bool)  # Emitted when show handles checkbox is toggled
     font_size_changed = Signal(int)  # Emitted when font size is changed
 
     def __init__(self, parent=None):
@@ -380,6 +382,13 @@ class MeasurementToolBar(QFrame):
         self._show_labels_cb.toggled.connect(self._on_toggle_labels)
         layout.addWidget(self._show_labels_cb)
 
+        # Show handles checkbox (PERFORMANCE: hide handles to improve pan/zoom speed)
+        self._show_handles_cb = QCheckBox("Show Handles")
+        self._show_handles_cb.setChecked(False)  # Hidden by default for performance
+        self._show_handles_cb.setToolTip("Show/hide polygon vertex handles\nHide for better pan/zoom performance")
+        self._show_handles_cb.toggled.connect(self._on_toggle_handles)
+        layout.addWidget(self._show_handles_cb)
+
         # Font size label
         font_label = QLabel("Size:")
         font_label.setStyleSheet("font-size: 11px;")
@@ -423,6 +432,10 @@ class MeasurementToolBar(QFrame):
         """Handle dose calculator button click."""
         self.open_dose_calculator.emit()
 
+    def _on_delete_selected(self):
+        """Handle delete selected button click."""
+        self.delete_selected.emit()
+
     def _on_clear_last(self):
         """Handle clear last button click."""
         if self._measurement_count > 0:
@@ -440,6 +453,10 @@ class MeasurementToolBar(QFrame):
     def _on_toggle_labels(self, checked: bool):
         """Handle show labels checkbox toggle."""
         self.toggle_labels.emit(checked)
+
+    def _on_toggle_handles(self, checked: bool):
+        """Handle show handles checkbox toggle."""
+        self.toggle_handles.emit(checked)
 
     def _on_font_size_changed(self, size: int):
         """Handle font size spinbox change."""

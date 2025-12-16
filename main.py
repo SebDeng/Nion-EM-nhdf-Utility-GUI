@@ -35,7 +35,7 @@ pg.setConfigOptions(
     useOpenGL=False,          # Disabled - caused polygon misalignment on macOS
     enableExperimental=True,  # Enable experimental features for performance
     antialias=False,          # Disable antialiasing for speed
-    useNumba=True,            # Use Numba JIT compilation if available
+    useNumba=False,           # Disabled - numba not installed
     # imageAxisOrder stays default 'col-major' - changing it breaks polygon alignment
 )
 
