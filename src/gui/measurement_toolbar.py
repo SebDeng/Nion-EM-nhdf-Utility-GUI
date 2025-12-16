@@ -182,6 +182,54 @@ def create_pipette_icon(size: int = 24, color: QColor = None) -> QIcon:
     return QIcon(pixmap)
 
 
+def create_delete_icon(size: int = 24, color: QColor = None) -> QIcon:
+    """Create a trash/delete icon."""
+    if color is None:
+        color = QColor(255, 100, 100)
+
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+
+    pen = QPen(color)
+    pen.setWidth(2)
+    painter.setPen(pen)
+
+    margin = 4
+    # Draw trash can body
+    body_top = margin + 5
+    body_bottom = size - margin
+    body_left = margin + 2
+    body_right = size - margin - 2
+
+    # Body outline
+    painter.drawLine(body_left, body_top, body_left + 2, body_bottom)
+    painter.drawLine(body_right, body_top, body_right - 2, body_bottom)
+    painter.drawLine(body_left + 2, body_bottom, body_right - 2, body_bottom)
+
+    # Lid
+    lid_y = margin + 3
+    painter.drawLine(margin, lid_y, size - margin, lid_y)
+
+    # Handle on lid
+    handle_width = 6
+    handle_x = size // 2 - handle_width // 2
+    painter.drawLine(handle_x, lid_y, handle_x, margin)
+    painter.drawLine(handle_x, margin, handle_x + handle_width, margin)
+    painter.drawLine(handle_x + handle_width, margin, handle_x + handle_width, lid_y)
+
+    # Vertical lines inside trash
+    mid_x = size // 2
+    painter.drawLine(mid_x, body_top + 3, mid_x, body_bottom - 3)
+    painter.drawLine(mid_x - 4, body_top + 3, mid_x - 3, body_bottom - 3)
+    painter.drawLine(mid_x + 4, body_top + 3, mid_x + 3, body_bottom - 3)
+
+    painter.end()
+    return QIcon(pixmap)
+
+
 def create_memo_icon(size: int = 24, color: QColor = None) -> QIcon:
     """Create a sticky note / memo pad icon."""
     if color is None:
@@ -258,6 +306,7 @@ class MeasurementToolBar(QFrame):
     clear_last = Signal()  # Emitted when clear last button is clicked
     toggle_labels = Signal(bool)  # Emitted when show labels checkbox is toggled
     font_size_changed = Signal(int)  # Emitted when font size is changed
+    delete_mode_changed = Signal(bool)  # Emitted when delete mode is toggled
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -321,6 +370,16 @@ class MeasurementToolBar(QFrame):
         self._dose_calc_btn.setShortcut("D")
         self._dose_calc_btn.clicked.connect(self._on_dose_calculator)
         layout.addWidget(self._dose_calc_btn)
+
+        # Delete mode toggle button
+        self._delete_mode_btn = QToolButton()
+        self._delete_mode_btn.setIcon(create_delete_icon(24, QColor(255, 100, 100)))
+        self._delete_mode_btn.setIconSize(QSize(20, 20))
+        self._delete_mode_btn.setToolTip("Delete mode (X)\nClick on measurement/polygon to delete it")
+        self._delete_mode_btn.setShortcut("X")
+        self._delete_mode_btn.setCheckable(True)
+        self._delete_mode_btn.toggled.connect(self._on_delete_mode_toggled)
+        layout.addWidget(self._delete_mode_btn)
 
         # Measurement count label
         self._count_label = QLabel("0")
@@ -422,6 +481,28 @@ class MeasurementToolBar(QFrame):
     def _on_dose_calculator(self):
         """Handle dose calculator button click."""
         self.open_dose_calculator.emit()
+
+    def _on_delete_mode_toggled(self, checked: bool):
+        """Handle delete mode toggle."""
+        self.delete_mode_changed.emit(checked)
+        # Update button appearance when checked
+        if checked:
+            self._delete_mode_btn.setStyleSheet("""
+                QToolButton {
+                    background-color: #cc3333;
+                    border: 2px solid #ff5555;
+                }
+            """)
+        else:
+            self._delete_mode_btn.setStyleSheet("")
+
+    def is_delete_mode_active(self) -> bool:
+        """Check if delete mode is currently active."""
+        return self._delete_mode_btn.isChecked()
+
+    def set_delete_mode(self, active: bool):
+        """Set delete mode state."""
+        self._delete_mode_btn.setChecked(active)
 
     def _on_clear_last(self):
         """Handle clear last button click."""

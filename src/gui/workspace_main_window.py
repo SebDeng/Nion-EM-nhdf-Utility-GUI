@@ -33,7 +33,6 @@ from src.gui.measurement_toolbar import MeasurementToolBar
 from src.gui.dose_calculator import DoseCalculatorDialog
 from src.gui.material_calculator import MaterialCalculatorDialog
 from src.gui.workspace_tab_bar import WorkspaceTabBar
-from src.gui.ripening_analysis import RipeningAnalysisDialog
 
 
 class WorkspaceMainWindow(QMainWindow):
@@ -100,6 +99,7 @@ class WorkspaceMainWindow(QMainWindow):
         self._measurement_toolbar.clear_last.connect(self._on_clear_last_measurement)
         self._measurement_toolbar.toggle_labels.connect(self._on_toggle_measurement_labels)
         self._measurement_toolbar.font_size_changed.connect(self._on_measurement_font_size_changed)
+        self._measurement_toolbar.delete_mode_changed.connect(self._on_delete_mode_changed)
         top_toolbar_layout.addWidget(self._measurement_toolbar, 1)  # Give stretch factor to fill space
 
         central_layout.addWidget(top_toolbar_widget)
@@ -330,12 +330,6 @@ class WorkspaceMainWindow(QMainWindow):
         material_calc_action.setShortcut(QKeySequence("Ctrl+M"))
         material_calc_action.triggered.connect(self._on_show_material_calculator)
         tools_menu.addAction(material_calc_action)
-
-        tools_menu.addSeparator()
-
-        ripening_action = QAction("&Ripening Analysis...", self)
-        ripening_action.triggered.connect(self._on_show_ripening_analysis)
-        tools_menu.addAction(ripening_action)
 
         # Export menu
         export_menu = menubar.addMenu("&Export")
@@ -1109,6 +1103,17 @@ class WorkspaceMainWindow(QMainWindow):
                         if hasattr(dp, '_measurement_overlay') and dp._measurement_overlay:
                             dp._measurement_overlay.set_label_font_size(size)
 
+    def _on_delete_mode_changed(self, active: bool):
+        """Handle delete mode toggle from measurement toolbar."""
+        # Set delete mode for all display panels
+        if self._workspace:
+            for panel in self._workspace.panels:
+                if isinstance(panel, WorkspaceDisplayPanel):
+                    if hasattr(panel, 'display_panel') and panel.display_panel:
+                        dp = panel.display_panel
+                        if hasattr(dp, '_measurement_overlay') and dp._measurement_overlay:
+                            dp._measurement_overlay.set_delete_mode(active)
+
     def _on_clear_analysis(self):
         """Handle clear analysis request."""
         # Clear analysis panel
@@ -1682,11 +1687,6 @@ class WorkspaceMainWindow(QMainWindow):
             return
 
         panel.display_panel.add_material_label(material_data)
-
-    def _on_show_ripening_analysis(self):
-        """Show the ripening analysis dialog."""
-        dialog = RipeningAnalysisDialog(self._workspace, parent=self)
-        dialog.exec()
 
     def _on_about(self):
         """Show about dialog."""

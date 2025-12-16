@@ -700,6 +700,9 @@ class DisplayPanel(QWidget):
         self._measurement_overlay = MeasurementOverlay(self._plot_item, self._image_item)
         self._measurement_overlay.measurement_created.connect(self.measurement_created.emit)
 
+        # Connect click handler for delete mode
+        self._plot_item.scene().sigMouseClicked.connect(self._on_delete_mode_click)
+
         # Memo pad manager (memos float over the graphics widget)
         self._memo_manager = MemoPadManager(self._graphics_widget)
 
@@ -1284,6 +1287,32 @@ class DisplayPanel(QWidget):
             self._plot_item.scene().sigMouseClicked.disconnect(self._on_pipette_click)
         except (TypeError, RuntimeError):
             pass  # Already disconnected or scene doesn't exist
+
+    def _on_delete_mode_click(self, event):
+        """Handle mouse click during delete mode to remove measurements."""
+        if not self._measurement_overlay:
+            return
+
+        # Only handle if delete mode is active
+        if not self._measurement_overlay.is_delete_mode():
+            return
+
+        # Only handle left click
+        if event.button() != Qt.LeftButton:
+            return
+
+        # Get click position in data coordinates
+        view_box = self._plot_item.getViewBox()
+        scene_pos = event.scenePos()
+        data_pos = view_box.mapSceneToView(scene_pos)
+
+        click_x = data_pos.x()
+        click_y = data_pos.y()
+
+        # Try to delete measurement at this position
+        if self._measurement_overlay.try_delete_at_position(click_x, click_y):
+            # Update measurement count in toolbar (handled by workspace_main_window)
+            pass
 
     def _set_measurement_calibration(self):
         """Set the calibration on the measurement overlay."""

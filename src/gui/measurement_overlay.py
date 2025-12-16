@@ -841,6 +841,9 @@ class MeasurementOverlay(QObject):
         self.plot_item.addItem(self._snap_indicator)
         self._snap_indicator.setZValue(2000)  # Above everything
 
+        # Delete mode flag
+        self._delete_mode = False
+
     def get_next_color(self) -> str:
         """Get the next color in the cycle."""
         color = self.measurement_colors[self.color_index % len(self.measurement_colors)]
@@ -1234,6 +1237,136 @@ class MeasurementOverlay(QObject):
         # Emit total area update if a polygon was removed
         if removed_polygon:
             self._emit_total_polygon_area()
+
+    def set_delete_mode(self, active: bool):
+        """Enable or disable delete mode."""
+        self._delete_mode = active
+        # Update cursor appearance for all ROIs
+        cursor = Qt.CrossCursor if active else Qt.ArrowCursor
+        for roi in self.active_line_rois + self.active_polygon_rois:
+            roi.setCursor(cursor)
+
+    def is_delete_mode(self) -> bool:
+        """Check if delete mode is active."""
+        return self._delete_mode
+
+    def remove_measurement(self, roi) -> bool:
+        """Remove a specific measurement (line or polygon) by its ROI.
+
+        Returns True if removed, False if not found.
+        """
+        removed_polygon = False
+
+        # Check if it's a line ROI
+        if roi in self.active_line_rois:
+            self.active_line_rois.remove(roi)
+            if roi in self._line_labels:
+                label = self._line_labels.pop(roi)
+                self.plot_item.removeItem(label)
+            self.plot_item.removeItem(roi)
+            return True
+
+        # Check if it's a polygon ROI
+        if roi in self.active_polygon_rois:
+            self.active_polygon_rois.remove(roi)
+            if roi in self._polygon_labels:
+                label = self._polygon_labels.pop(roi)
+                self.plot_item.removeItem(label)
+            self.plot_item.removeItem(roi)
+            removed_polygon = True
+
+        # Emit total area update if a polygon was removed
+        if removed_polygon:
+            self._emit_total_polygon_area()
+            return True
+
+        return False
+
+    def try_delete_at_position(self, x: float, y: float) -> bool:
+        """Try to delete a measurement at the given position.
+
+        Returns True if something was deleted, False otherwise.
+        """
+        if not self._delete_mode:
+            return False
+
+        # Check polygon ROIs first (they're usually larger)
+        for roi in list(self.active_polygon_rois):
+            if self._point_in_polygon_roi(roi, x, y):
+                return self.remove_measurement(roi)
+
+        # Check line ROIs
+        for roi in list(self.active_line_rois):
+            if self._point_near_line_roi(roi, x, y, threshold=10):
+                return self.remove_measurement(roi)
+
+        return False
+
+    def _point_in_polygon_roi(self, roi, x: float, y: float) -> bool:
+        """Check if a point is inside a polygon ROI."""
+        try:
+            # Get polygon vertices
+            handles = roi.getHandles()
+            if len(handles) < 3:
+                return False
+
+            vertices = []
+            for handle in handles:
+                pos = handle.pos()
+                scene_pos = roi.mapToScene(pos)
+                view_pos = self.view_box.mapSceneToView(scene_pos)
+                vertices.append((view_pos.x(), view_pos.y()))
+
+            # Point in polygon test (ray casting)
+            n = len(vertices)
+            inside = False
+            j = n - 1
+            for i in range(n):
+                xi, yi = vertices[i]
+                xj, yj = vertices[j]
+                if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
+                    inside = not inside
+                j = i
+            return inside
+        except Exception:
+            return False
+
+    def _point_near_line_roi(self, roi, x: float, y: float, threshold: float = 10) -> bool:
+        """Check if a point is near a line ROI."""
+        try:
+            handles = roi.getHandles()
+            if len(handles) < 2:
+                return False
+
+            # Get line endpoints
+            pos0 = handles[0].pos()
+            pos1 = handles[1].pos()
+            scene_pos0 = roi.mapToScene(pos0)
+            scene_pos1 = roi.mapToScene(pos1)
+            view_pos0 = self.view_box.mapSceneToView(scene_pos0)
+            view_pos1 = self.view_box.mapSceneToView(scene_pos1)
+
+            x0, y0 = view_pos0.x(), view_pos0.y()
+            x1, y1 = view_pos1.x(), view_pos1.y()
+
+            # Calculate distance from point to line segment
+            dx = x1 - x0
+            dy = y1 - y0
+            length_sq = dx * dx + dy * dy
+
+            if length_sq == 0:
+                # Line is a point
+                dist = ((x - x0) ** 2 + (y - y0) ** 2) ** 0.5
+            else:
+                # Parameter t for closest point on line segment
+                t = max(0, min(1, ((x - x0) * dx + (y - y0) * dy) / length_sq))
+                closest_x = x0 + t * dx
+                closest_y = y0 + t * dy
+                dist = ((x - closest_x) ** 2 + (y - closest_y) ** 2) ** 0.5
+
+            return dist <= threshold
+        except Exception:
+            return False
 
     def has_active_measurement(self) -> bool:
         """Check if there are any active measurement lines."""
