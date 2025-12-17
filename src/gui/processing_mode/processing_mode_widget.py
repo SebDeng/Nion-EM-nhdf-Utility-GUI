@@ -455,7 +455,7 @@ class ProcessingModeWidget(QWidget):
             self,
             "Open File for Processing",
             "",
-            "EM Files (*.nhdf *.dm3 *.dm4);;nhdf Files (*.nhdf);;DM Files (*.dm3 *.dm4);;All Files (*)"
+            "EM Files (*.nhdf *.ndata1 *.dm3 *.dm4);;nhdf Files (*.nhdf);;ndata1 Files (*.ndata1);;DM Files (*.dm3 *.dm4);;All Files (*)"
         )
 
         if file_path:
@@ -485,7 +485,7 @@ class ProcessingModeWidget(QWidget):
             for url in event.mimeData().urls():
                 if url.isLocalFile():
                     file_path = url.toLocalFile()
-                    if file_path.lower().endswith(('.nhdf', '.dm3', '.dm4')):
+                    if file_path.lower().endswith(('.nhdf', '.ndata1', '.dm3', '.dm4')):
                         event.acceptProposedAction()
                         # Visual feedback
                         self.setStyleSheet("""
@@ -510,7 +510,7 @@ class ProcessingModeWidget(QWidget):
             for url in event.mimeData().urls():
                 if url.isLocalFile():
                     file_path = url.toLocalFile()
-                    if file_path.lower().endswith(('.nhdf', '.dm3', '.dm4')):
+                    if file_path.lower().endswith(('.nhdf', '.ndata1', '.dm3', '.dm4')):
                         try:
                             import pathlib
                             # Read the file

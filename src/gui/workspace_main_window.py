@@ -1454,9 +1454,9 @@ class WorkspaceMainWindow(QMainWindow):
         """Open a file dialog to select an nhdf file."""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Open nhdf File",
+            "Open EM File",
             str(self._file_browser.current_path or pathlib.Path.home()),
-            "EM Files (*.nhdf *.dm3 *.dm4);;nhdf Files (*.nhdf);;DM Files (*.dm3 *.dm4);;All Files (*)"
+            "EM Files (*.nhdf *.ndata1 *.dm3 *.dm4);;nhdf Files (*.nhdf);;ndata1 Files (*.ndata1);;DM Files (*.dm3 *.dm4);;All Files (*)"
         )
         if file_path:
             self._load_file_in_current_panel(pathlib.Path(file_path))
@@ -1465,9 +1465,9 @@ class WorkspaceMainWindow(QMainWindow):
         """Open a file in a new panel."""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Open nhdf File in New Panel",
+            "Open EM File in New Panel",
             str(self._file_browser.current_path or pathlib.Path.home()),
-            "EM Files (*.nhdf *.dm3 *.dm4);;nhdf Files (*.nhdf);;DM Files (*.dm3 *.dm4);;All Files (*)"
+            "EM Files (*.nhdf *.ndata1 *.dm3 *.dm4);;nhdf Files (*.nhdf);;ndata1 Files (*.ndata1);;DM Files (*.dm3 *.dm4);;All Files (*)"
         )
         if file_path:
             # Split current panel vertically and load file in new panel
@@ -1669,12 +1669,14 @@ class WorkspaceMainWindow(QMainWindow):
 
     def _on_show_dose_calculator(self):
         """Show the electron dose calculator dialog."""
-        # Get current data from selected panel
+        # Get current data and frame index from selected panel
         current_data = None
+        frame_index = 0
         if isinstance(self._workspace.selected_panel, WorkspaceDisplayPanel):
             current_data = self._workspace.selected_panel.current_data
+            frame_index = self._workspace.selected_panel.display_panel.current_frame
 
-        dialog = DoseCalculatorDialog(current_data, parent=self)
+        dialog = DoseCalculatorDialog(current_data, frame_index=frame_index, parent=self)
         dialog.add_to_panel.connect(self._on_add_dose_to_panel)
         dialog.exec()
 

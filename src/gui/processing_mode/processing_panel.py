@@ -298,7 +298,7 @@ class ProcessingPanel(QFrame):
             for url in event.mimeData().urls():
                 if url.isLocalFile():
                     file_path = url.toLocalFile()
-                    if file_path.lower().endswith(('.nhdf', '.dm3', '.dm4')):
+                    if file_path.lower().endswith(('.nhdf', '.ndata1', '.dm3', '.dm4')):
                         event.acceptProposedAction()
                         # Visual feedback
                         self.setStyleSheet("""
@@ -327,7 +327,7 @@ class ProcessingPanel(QFrame):
             for url in event.mimeData().urls():
                 if url.isLocalFile():
                     file_path = url.toLocalFile()
-                    if file_path.lower().endswith(('.nhdf', '.dm3', '.dm4')):
+                    if file_path.lower().endswith(('.nhdf', '.ndata1', '.dm3', '.dm4')):
                         self.file_dropped.emit(file_path)
                         event.acceptProposedAction()
                         return

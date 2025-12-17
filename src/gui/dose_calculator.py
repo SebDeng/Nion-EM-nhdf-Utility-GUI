@@ -32,9 +32,10 @@ class DoseCalculatorDialog(QDialog):
     # Default probe current in pA
     DEFAULT_PROBE_CURRENT = 15.0
 
-    def __init__(self, data: Optional[NHDFData] = None, parent=None):
+    def __init__(self, data: Optional[NHDFData] = None, frame_index: int = 0, parent=None):
         super().__init__(parent)
         self._data = data
+        self._frame_index = frame_index
         self._last_result: Optional[Dict[str, float]] = None
 
         self.setWindowTitle("Electron Dose Calculator")
@@ -215,9 +216,15 @@ class DoseCalculatorDialog(QDialog):
 
         layout.addLayout(button_layout)
 
-    def set_data(self, data: Optional[NHDFData]):
+    def set_data(self, data: Optional[NHDFData], frame_index: int = 0):
         """Set the data to calculate dose for."""
         self._data = data
+        self._frame_index = frame_index
+        self._update_display()
+
+    def set_frame_index(self, frame_index: int):
+        """Set the current frame index for per-frame FOV calculation."""
+        self._frame_index = frame_index
         self._update_display()
 
     def _update_display(self):
@@ -230,8 +237,17 @@ class DoseCalculatorDialog(QDialog):
             self._clear_results()
             return
 
-        # Pixel size
-        pixel_size = self._data.pixel_size_nm
+        # Check for variable FOV
+        has_variable_fov = hasattr(self._data, 'has_variable_fov') and self._data.has_variable_fov
+
+        # Pixel size - use per-frame if variable FOV
+        if has_variable_fov:
+            pixel_size = self._data.get_frame_pixel_size_nm(self._frame_index)
+            fov_nm = self._data.get_frame_fov_nm(self._frame_index)
+        else:
+            pixel_size = self._data.pixel_size_nm
+            fov_nm = self._data.context_fov_nm
+
         if pixel_size is not None:
             self._pixel_size_label.setText(f"{pixel_size:.4f} nm ({pixel_size * 10:.3f} Å)")
         else:
@@ -244,21 +260,36 @@ class DoseCalculatorDialog(QDialog):
         else:
             self._pixel_time_label.setText("Not available")
 
-        # FOV - calculate from pixel size × image dimensions (correct for subscans)
-        if pixel_size is not None and self._data.is_2d_image:
+        # FOV - use per-frame if variable FOV
+        if has_variable_fov and fov_nm is not None:
+            # Show per-frame FOV with frame indicator and warning
+            fov_text = f"{fov_nm:.2f} nm (frame {self._frame_index})"
+            # Add warning about variable FOV
+            transitions = self._data.get_fov_transitions()
+            if len(transitions) > 1:
+                fov_text += " ⚠️ Variable FOV!"
+            self._fov_label.setText(fov_text)
+            self._fov_label.setToolTip(
+                "This file has variable FOV during acquisition.\n"
+                f"FOV transitions: {transitions}\n"
+                "Dose calculation uses the current frame's FOV."
+            )
+        elif pixel_size is not None and self._data.is_2d_image:
             shape = self._data.frame_shape
-            fov_x = pixel_size * shape[1]  # width
-            fov_y = pixel_size * shape[0]  # height
-            if abs(fov_x - fov_y) < 0.01:  # Square FOV
+            fov_x = pixel_size * shape[1]
+            fov_y = pixel_size * shape[0]
+            if abs(fov_x - fov_y) < 0.01:
                 self._fov_label.setText(f"{fov_x:.2f} nm")
             else:
                 self._fov_label.setText(f"{fov_x:.2f} × {fov_y:.2f} nm")
+            self._fov_label.setToolTip("")
         else:
             actual_fov = self._data.actual_fov
             if actual_fov:
                 self._fov_label.setText(f"{actual_fov[0]:.1f} × {actual_fov[1]:.1f} {actual_fov[2]}")
             else:
                 self._fov_label.setText("Not available")
+            self._fov_label.setToolTip("")
 
         # Image size
         if self._data.is_2d_image:
@@ -277,7 +308,7 @@ class DoseCalculatorDialog(QDialog):
             return
 
         probe_current = self._probe_current_spin.value()
-        result = self._data.calculate_electron_dose(probe_current)
+        result = self._data.calculate_electron_dose(probe_current, frame_index=self._frame_index)
 
         if result is None:
             self._clear_results()

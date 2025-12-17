@@ -647,7 +647,7 @@ class ProcessingModeWidgetV3(QWidget):
             self,
             "Open File for Processing",
             "",
-            "EM Files (*.nhdf *.dm3 *.dm4);;All Files (*)"
+            "EM Files (*.nhdf *.ndata1 *.dm3 *.dm4);;All Files (*)"
         )
 
         if file_path:
@@ -712,7 +712,7 @@ class ProcessingModeWidgetV3(QWidget):
             for url in event.mimeData().urls():
                 if url.isLocalFile():
                     path = url.toLocalFile()
-                    if path.lower().endswith(('.nhdf', '.dm3', '.dm4')):
+                    if path.lower().endswith(('.nhdf', '.ndata1', '.dm3', '.dm4')):
                         event.acceptProposedAction()
                         panel.setStyleSheet("QFrame { border: 2px solid #4a90d9; }")
                         return
@@ -728,7 +728,7 @@ class ProcessingModeWidgetV3(QWidget):
             for url in event.mimeData().urls():
                 if url.isLocalFile():
                     file_path = url.toLocalFile()
-                    if file_path.lower().endswith(('.nhdf', '.dm3', '.dm4')):
+                    if file_path.lower().endswith(('.nhdf', '.ndata1', '.dm3', '.dm4')):
                         self._load_file(file_path)
                         event.acceptProposedAction()
                         return
@@ -739,7 +739,7 @@ class ProcessingModeWidgetV3(QWidget):
             for url in event.mimeData().urls():
                 if url.isLocalFile():
                     path = url.toLocalFile()
-                    if path.lower().endswith(('.nhdf', '.dm3', '.dm4')):
+                    if path.lower().endswith(('.nhdf', '.ndata1', '.dm3', '.dm4')):
                         event.acceptProposedAction()
                         return
 
@@ -749,7 +749,7 @@ class ProcessingModeWidgetV3(QWidget):
             for url in event.mimeData().urls():
                 if url.isLocalFile():
                     file_path = url.toLocalFile()
-                    if file_path.lower().endswith(('.nhdf', '.dm3', '.dm4')):
+                    if file_path.lower().endswith(('.nhdf', '.ndata1', '.dm3', '.dm4')):
                         self._load_file(file_path)
                         event.acceptProposedAction()
                         return

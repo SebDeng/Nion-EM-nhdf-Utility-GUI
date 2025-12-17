@@ -1,5 +1,5 @@
 """
-File browser panel for navigating and selecting EM data files (nhdf, dm3, dm4).
+File browser panel for navigating and selecting EM data files (nhdf, ndata1, dm3, dm4).
 """
 
 from PySide6.QtWidgets import (
@@ -41,7 +41,7 @@ class DraggableTreeView(QTreeView):
         file_path = source_model.filePath(source_index)
 
         # Only allow dragging of supported files (EM + images)
-        supported_extensions = ('.nhdf', '.dm3', '.dm4', '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp')
+        supported_extensions = ('.nhdf', '.ndata1', '.dm3', '.dm4', '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp')
         if not file_path.lower().endswith(supported_extensions):
             return
 
@@ -65,7 +65,7 @@ class EMFileFilterProxyModel(QSortFilterProxyModel):
     """Proxy model to filter for EM data files and images."""
 
     # Supported file extensions (EM + images)
-    SUPPORTED_EXTENSIONS = ('.nhdf', '.dm3', '.dm4', '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp')
+    SUPPORTED_EXTENSIONS = ('.nhdf', '.ndata1', '.dm3', '.dm4', '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp')
 
     def __init__(self, parent=None):
         super().__init__(parent)

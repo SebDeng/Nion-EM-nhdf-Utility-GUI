@@ -16,7 +16,7 @@ from typing import Optional, List, Dict, Any, Union
 from dataclasses import dataclass
 
 # Supported file extensions for drag-drop (EM formats + images)
-SUPPORTED_EM_EXTENSIONS = ('.nhdf', '.dm3', '.dm4')
+SUPPORTED_EM_EXTENSIONS = ('.nhdf', '.ndata1', '.dm3', '.dm4')
 SUPPORTED_IMAGE_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp')
 SUPPORTED_EXTENSIONS = SUPPORTED_EM_EXTENSIONS + SUPPORTED_IMAGE_EXTENSIONS
 

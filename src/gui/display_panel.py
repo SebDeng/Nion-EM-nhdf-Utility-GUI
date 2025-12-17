@@ -959,6 +959,13 @@ class DisplayPanel(QWidget):
             f"Type: {frame_data.dtype}",
             f"Range: [{frame_data.min():.2g}, {frame_data.max():.2g}]"
         ]
+
+        # Show per-frame FOV if data has variable FOV (e.g., ndata1 with subscan transitions)
+        if hasattr(self._data, 'has_variable_fov') and self._data.has_variable_fov:
+            fov = self._data.get_frame_fov_nm(self._current_frame)
+            if fov is not None:
+                info_parts.append(f"FOV: {fov:.1f} nm")
+
         self._info_label.setText(" | ".join(info_parts))
 
     def _on_frame_changed(self, frame: int):
@@ -972,6 +979,9 @@ class DisplayPanel(QWidget):
                 self._frame_controls.blockSignals(True)
                 self._frame_controls.set_current_frame(frame)
                 self._frame_controls.blockSignals(False)
+        # Update scale bar if data has variable FOV (e.g., ndata1 with subscan transitions)
+        if self._data is not None and hasattr(self._data, 'has_variable_fov') and self._data.has_variable_fov:
+            self._update_scale_bar()
 
     def _on_colormap_changed(self, name: str):
         """Handle colormap change."""
@@ -1016,14 +1026,26 @@ class DisplayPanel(QWidget):
             self._scale_bar.setVisible(False)
             return
 
-        # Get spatial calibrations
+        ny, nx = self._data.frame_shape
+
+        # Check if data has variable FOV (e.g., ndata1 with timeseries)
+        if hasattr(self._data, 'has_variable_fov') and self._data.has_variable_fov:
+            # Use per-frame FOV
+            fov = self._data.get_frame_fov_nm(self._current_frame)
+            if fov is not None:
+                scale_per_pixel = fov / nx if nx > 0 else 1.0
+                units = 'nm'
+                self._scale_bar.set_scale(scale_per_pixel, units, nx, ny)
+                self._scale_bar.setVisible(self._scalebar_check.isChecked())
+                return
+
+        # Fall back to global FOV from actual_fov property
         fov_info = self._data.actual_fov
         if fov_info is None:
             self._scale_bar.setVisible(False)
             return
 
         fov_y, fov_x, units = fov_info
-        ny, nx = self._data.frame_shape
 
         # Calculate scale per pixel (use x dimension)
         scale_per_pixel = fov_x / nx if nx > 0 else 1.0

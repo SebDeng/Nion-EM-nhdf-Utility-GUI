@@ -202,7 +202,7 @@ class MainWindow(QMainWindow):
             self,
             "Open EM File",
             str(self._file_browser.current_path or pathlib.Path.home()),
-            "EM Files (*.nhdf *.dm3 *.dm4);;nhdf Files (*.nhdf);;DM Files (*.dm3 *.dm4);;All Files (*)"
+            "EM Files (*.nhdf *.ndata1 *.dm3 *.dm4);;nhdf Files (*.nhdf);;ndata1 Files (*.ndata1);;DM Files (*.dm3 *.dm4);;All Files (*)"
         )
         if file_path:
             self._load_file(pathlib.Path(file_path))
@@ -239,7 +239,7 @@ class MainWindow(QMainWindow):
             pass
 
     def _load_file(self, path: pathlib.Path):
-        """Load an EM data file (nhdf, dm3, dm4)."""
+        """Load an EM data file (nhdf, ndata1, dm3, dm4)."""
         try:
             self._statusbar.showMessage(f"Loading {path.name}...")
             QApplication.processEvents()

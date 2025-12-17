@@ -4,9 +4,11 @@ Handles loading Nion nhdf (HDF5-based) files and Gatan DM3/DM4 files.
 """
 
 import h5py
+import io
 import json
 import numpy as np
 import pathlib
+import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional, Dict, List, Tuple
@@ -195,6 +197,148 @@ class NHDFData:
         return self.scan_info.get("fov_nm")
 
     @property
+    def timeseries(self) -> Optional[List[Dict[str, Any]]]:
+        """Get per-frame timeseries data if available (from ndata1 properties)."""
+        props = self.raw_properties.get('properties', {})
+        return props.get('timeseries')
+
+    def get_frame_fov_nm(self, frame_index: int = 0) -> Optional[float]:
+        """
+        Get the FOV in nm for a specific frame.
+
+        For ndata1 files with timeseries data, this returns the per-frame FOV.
+        Otherwise falls back to the global scan FOV.
+
+        Args:
+            frame_index: Frame index (0-based)
+
+        Returns:
+            FOV in nm, or None if not available
+        """
+        ts = self.timeseries
+        if ts and 0 <= frame_index < len(ts):
+            fov = ts[frame_index].get('FOV')
+            if fov is not None:
+                return float(fov)
+        # Fall back to global FOV
+        return self.context_fov_nm
+
+    @property
+    def has_variable_fov(self) -> bool:
+        """
+        Check if the FOV changes during the sequence.
+
+        Returns True if different frames have different FOV values.
+        """
+        ts = self.timeseries
+        if not ts or len(ts) < 2:
+            return False
+
+        fov_values = set()
+        for entry in ts:
+            fov = entry.get('FOV')
+            if fov is not None:
+                fov_values.add(fov)
+                if len(fov_values) > 1:
+                    return True
+        return False
+
+    def get_fov_transitions(self) -> List[Tuple[int, float]]:
+        """
+        Get list of frame indices where FOV changes.
+
+        Returns:
+            List of (frame_index, new_fov_nm) tuples marking FOV transitions
+        """
+        ts = self.timeseries
+        if not ts:
+            return []
+
+        transitions = []
+        prev_fov = None
+        for i, entry in enumerate(ts):
+            fov = entry.get('FOV')
+            if fov is not None and fov != prev_fov:
+                transitions.append((i, float(fov)))
+                prev_fov = fov
+        return transitions
+
+    def get_frame_pixel_size_nm(self, frame_index: int = 0) -> Optional[float]:
+        """
+        Get the pixel size in nm for a specific frame.
+
+        For sequences with variable FOV, this calculates the correct pixel size
+        based on the per-frame FOV.
+
+        Args:
+            frame_index: Frame index (0-based)
+
+        Returns:
+            Pixel size in nm, or None if not available
+        """
+        fov = self.get_frame_fov_nm(frame_index)
+        if fov is None:
+            return self.pixel_size_nm
+
+        # Calculate pixel size from FOV and image dimensions
+        if not self.is_2d_image:
+            return None
+
+        frame_shape = self.frame_shape
+        if len(frame_shape) < 2:
+            return None
+
+        # Assume square pixels, use the larger dimension
+        image_size = max(frame_shape[0], frame_shape[1])
+        return fov / image_size
+
+    def get_frame_calibrations(self, frame_index: int = 0) -> List[CalibrationInfo]:
+        """
+        Get dimensional calibrations adjusted for a specific frame's FOV.
+
+        For sequences with variable FOV, this returns calibrations with the
+        correct scale for the specified frame.
+
+        Args:
+            frame_index: Frame index (0-based)
+
+        Returns:
+            List of CalibrationInfo objects for the frame
+        """
+        # If no variable FOV, return the stored calibrations
+        if not self.has_variable_fov:
+            return self.dimensional_calibrations
+
+        fov = self.get_frame_fov_nm(frame_index)
+        if fov is None:
+            return self.dimensional_calibrations
+
+        # Get the base calibrations
+        base_cals = list(self.dimensional_calibrations)
+
+        # For sequences, first calibration is time, rest are spatial
+        if self.data_descriptor.is_sequence and len(base_cals) > 2:
+            # Calculate new pixel size for this frame's FOV
+            frame_shape = self.frame_shape
+            if len(frame_shape) >= 2:
+                pixel_size = fov / max(frame_shape[0], frame_shape[1])
+                # Update Y and X calibrations (indices 1 and 2)
+                new_cals = [base_cals[0]]  # Keep time calibration
+                for cal in base_cals[1:]:
+                    if cal.units in ('nm', 'nanometer', 'nanometers', 'um', 'µm', ''):
+                        new_cal = CalibrationInfo(
+                            offset=-fov / 2,  # Center at 0
+                            scale=pixel_size,
+                            units='nm'
+                        )
+                        new_cals.append(new_cal)
+                    else:
+                        new_cals.append(cal)
+                return new_cals
+
+        return base_cals
+
+    @property
     def actual_fov(self) -> Optional[Tuple[float, float, str]]:
         """
         Calculate actual FOV from calibrations.
@@ -283,21 +427,33 @@ class NHDFData:
         # If no units, assume nm
         return abs(cal.scale)
 
-    def calculate_electron_dose(self, probe_current_pA: float = 15.0) -> Optional[Dict[str, float]]:
+    def calculate_electron_dose(self, probe_current_pA: float = 15.0, frame_index: int = 0) -> Optional[Dict[str, float]]:
         """
-        Calculate electron dose, flux, and electron counts.
+        Calculate electron dose, flux, and electron counts for a specific frame.
+
+        For data with variable FOV (e.g., ndata1 with subscan transitions), this
+        uses the per-frame pixel size for accurate dose calculation.
 
         Args:
             probe_current_pA: Probe current in picoamperes (default: 15 pA)
+            frame_index: Frame index for per-frame FOV calculation (default: 0)
 
         Returns:
             Dictionary with dose calculations or None if data is insufficient.
             Keys: 'dose_e_per_nm2', 'dose_e_per_A2', 'flux_e_per_nm2_s', 'flux_e_per_A2_s',
                   'pixel_size_nm', 'pixel_time_us', 'electrons_per_pixel',
                   'electrons_per_frame', 'total_electrons_series', 'num_pixels',
-                  'num_frames', 'frame_area_nm2', 'frame_area_A2'
+                  'num_frames', 'frame_area_nm2', 'frame_area_A2', 'fov_nm',
+                  'has_variable_fov'
         """
-        pixel_size_nm = self.pixel_size_nm
+        # Use per-frame pixel size if available (for variable FOV data)
+        if hasattr(self, 'has_variable_fov') and self.has_variable_fov:
+            pixel_size_nm = self.get_frame_pixel_size_nm(frame_index)
+            fov_nm = self.get_frame_fov_nm(frame_index)
+        else:
+            pixel_size_nm = self.pixel_size_nm
+            fov_nm = self.context_fov_nm
+
         pixel_time_us = self.pixel_time_us
 
         if pixel_size_nm is None or pixel_time_us is None:
@@ -336,7 +492,9 @@ class NHDFData:
         # Total electrons per frame = electrons/pixel × number of pixels
         electrons_per_frame = electrons_per_pixel * num_pixels
 
-        # Total electrons in the entire series = electrons/frame × number of frames
+        # For variable FOV data, total electrons is more complex
+        # (different frames may have different doses)
+        # For simplicity, calculate as if all frames had current frame's FOV
         total_electrons_series = electrons_per_frame * num_frames
 
         # Frame area (for reference)
@@ -358,7 +516,11 @@ class NHDFData:
             'num_pixels': num_pixels,
             'num_frames': num_frames,
             'frame_area_nm2': frame_area_nm2,
-            'frame_area_A2': frame_area_A2
+            'frame_area_A2': frame_area_A2,
+            # FOV info
+            'fov_nm': fov_nm,
+            'has_variable_fov': hasattr(self, 'has_variable_fov') and self.has_variable_fov,
+            'frame_index': frame_index
         }
 
 
@@ -732,9 +894,184 @@ class DM3Reader:
             return {"error": str(e)}
 
 
+class NData1Reader:
+    """Reader for Nion Swift .ndata1 files (zip archives with metadata.json + data.npy)."""
+
+    def __init__(self):
+        self._cache: Dict[str, NHDFData] = {}
+
+    def read(self, path: pathlib.Path, use_cache: bool = True) -> NHDFData:
+        """
+        Read an ndata1 file and return the data in NHDFData format.
+
+        Args:
+            path: Path to the ndata1 file
+            use_cache: Whether to use cached data if available
+
+        Returns:
+            NHDFData object containing the data and metadata
+        """
+        path = pathlib.Path(path)
+        cache_key = str(path.resolve())
+
+        if use_cache and cache_key in self._cache:
+            return self._cache[cache_key]
+
+        if not path.exists():
+            raise FileNotFoundError(f"File not found: {path}")
+
+        suffix = path.suffix.lower()
+        if suffix != '.ndata1':
+            raise ValueError(f"Not an ndata1 file: {path}")
+
+        # ndata1 is a zip archive containing metadata.json and data.npy
+        with zipfile.ZipFile(str(path), 'r') as zf:
+            # Read metadata
+            if 'metadata.json' not in zf.namelist():
+                raise ValueError(f"No metadata.json found in {path}")
+            if 'data.npy' not in zf.namelist():
+                raise ValueError(f"No data.npy found in {path}")
+
+            with zf.open('metadata.json') as f:
+                json_properties = json.load(f)
+
+            # Read the numpy data
+            with zf.open('data.npy') as f:
+                # Read npy file from bytes
+                data = np.load(io.BytesIO(f.read()))
+
+        # Create data descriptor
+        data_descriptor = DataDescriptor(
+            is_sequence=json_properties.get("is_sequence", False),
+            collection_dimension_count=json_properties.get("collection_dimension_count", 0),
+            datum_dimension_count=json_properties.get("datum_dimension_count", 0)
+        )
+
+        # Create calibrations from spatial_calibrations
+        spatial_cals = json_properties.get("spatial_calibrations", [])
+        dimensional_calibrations = [
+            CalibrationInfo.from_rpc_dict(d) for d in spatial_cals
+        ]
+
+        # Create intensity calibration
+        intensity_cal_dict = json_properties.get("intensity_calibration", {})
+        intensity_calibration = CalibrationInfo.from_rpc_dict(intensity_cal_dict)
+
+        # Get metadata (scan, instrument, hardware_source, etc.)
+        metadata = json_properties.get("metadata", {})
+
+        # Parse timestamps
+        timestamp = None
+        datetime_original = json_properties.get("datetime_original", "")
+        datetime_modified = json_properties.get("datetime_modified", "")
+        timestamp_str = datetime_original or datetime_modified
+
+        if timestamp_str:
+            try:
+                # Try ISO format first
+                timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+            except Exception:
+                try:
+                    timestamp = Converter.DatetimeToStringConverter().convert_back(timestamp_str)
+                except Exception:
+                    pass
+
+        # Build raw properties (combine top-level metadata with nested)
+        raw_properties = {
+            'type': 'ndata1-data-item',
+            'version': json_properties.get('version', 1),
+            'data_shape': list(data.shape),
+            'data_dtype': str(data.dtype),
+            'is_sequence': data_descriptor.is_sequence,
+            'dimensional_calibrations': [
+                {'offset': c.offset, 'scale': c.scale, 'units': c.units}
+                for c in dimensional_calibrations
+            ],
+            'intensity_calibration': {
+                'offset': intensity_calibration.offset,
+                'scale': intensity_calibration.scale,
+                'units': intensity_calibration.units
+            },
+            'metadata': metadata,
+            'source_format': 'ndata1',
+            'title': json_properties.get('title', path.stem),
+            'uuid': json_properties.get('uuid', ''),
+        }
+
+        # Also include properties from the ndata1 metadata
+        if 'properties' in json_properties:
+            raw_properties['properties'] = json_properties['properties']
+
+        # Create result object
+        result = NHDFData(
+            file_path=path,
+            data=data,
+            data_descriptor=data_descriptor,
+            intensity_calibration=intensity_calibration,
+            dimensional_calibrations=dimensional_calibrations,
+            metadata=metadata,
+            timestamp=timestamp,
+            timezone=metadata.get('timezone'),
+            timezone_offset=metadata.get('timezone_offset'),
+            raw_properties=raw_properties
+        )
+
+        if use_cache:
+            self._cache[cache_key] = result
+
+        return result
+
+    def clear_cache(self, path: Optional[pathlib.Path] = None):
+        """Clear the cache, optionally for a specific file."""
+        if path is None:
+            self._cache.clear()
+        else:
+            cache_key = str(pathlib.Path(path).resolve())
+            self._cache.pop(cache_key, None)
+
+    def get_file_info(self, path: pathlib.Path) -> Dict[str, Any]:
+        """Get basic info about an ndata1 file without loading all data."""
+        path = pathlib.Path(path)
+
+        try:
+            with zipfile.ZipFile(str(path), 'r') as zf:
+                if 'metadata.json' not in zf.namelist():
+                    return {"error": "No metadata.json"}
+
+                with zf.open('metadata.json') as f:
+                    meta = json.load(f)
+
+                # Get shape from metadata or from data.npy header
+                shape = None
+                if 'properties' in meta and 'data_shape' in meta['properties']:
+                    shape = tuple(meta['properties']['data_shape'])
+
+                # Try to read shape from npy header without loading data
+                if shape is None and 'data.npy' in zf.namelist():
+                    with zf.open('data.npy') as f:
+                        # Read npy header to get shape
+                        version = np.lib.format.read_magic(f)
+                        shape_info, _, _ = np.lib.format._read_array_header(f, version)
+                        shape = shape_info
+
+                is_sequence = meta.get('is_sequence', False)
+
+                return {
+                    "shape": shape,
+                    "dtype": "unknown",  # Would need to parse npy header
+                    "is_sequence": is_sequence,
+                    "num_frames": shape[0] if is_sequence and shape else 1,
+                    "created": meta.get('datetime_original', ''),
+                    "title": meta.get('title', ''),
+                }
+        except Exception as e:
+            return {"error": str(e)}
+
+
 # Global reader instances
 _nhdf_reader = NHDFReader()
 _dm3_reader = DM3Reader()
+_ndata1_reader = NData1Reader()
 
 
 def read_nhdf(path: pathlib.Path, use_cache: bool = True) -> NHDFData:
@@ -745,6 +1082,11 @@ def read_nhdf(path: pathlib.Path, use_cache: bool = True) -> NHDFData:
 def read_dm3(path: pathlib.Path, use_cache: bool = True) -> NHDFData:
     """Convenience function to read a DM3/DM4 file."""
     return _dm3_reader.read(path, use_cache)
+
+
+def read_ndata1(path: pathlib.Path, use_cache: bool = True) -> NHDFData:
+    """Convenience function to read an ndata1 file."""
+    return _ndata1_reader.read(path, use_cache)
 
 
 def read_image_file(path: pathlib.Path) -> NHDFData:
@@ -841,19 +1183,21 @@ def read_em_file(path: pathlib.Path, use_cache: bool = True) -> NHDFData:
     Read an EM file or image file and return data in NHDFData format.
 
     Automatically detects file type based on extension.
-    Supports: .nhdf, .dm3, .dm4, .png, .jpg, .jpeg, .tif, .tiff, .bmp
+    Supports: .nhdf, .ndata1, .dm3, .dm4, .png, .jpg, .jpeg, .tif, .tiff, .bmp
     """
     path = pathlib.Path(path)
     suffix = path.suffix.lower()
 
     if suffix == '.nhdf':
         return _nhdf_reader.read(path, use_cache)
+    elif suffix == '.ndata1':
+        return _ndata1_reader.read(path, use_cache)
     elif suffix in ('.dm3', '.dm4'):
         return _dm3_reader.read(path, use_cache)
     elif suffix in IMAGE_EXTENSIONS:
         return read_image_file(path)
     else:
-        raise ValueError(f"Unsupported file format: {suffix}. Supported: .nhdf, .dm3, .dm4, .png, .jpg, .tif, .bmp")
+        raise ValueError(f"Unsupported file format: {suffix}. Supported: .nhdf, .ndata1, .dm3, .dm4, .png, .jpg, .tif, .bmp")
 
 
 def get_file_info(path: pathlib.Path) -> Dict[str, Any]:
@@ -863,6 +1207,8 @@ def get_file_info(path: pathlib.Path) -> Dict[str, Any]:
 
     if suffix == '.nhdf':
         return _nhdf_reader.get_file_info(path)
+    elif suffix == '.ndata1':
+        return _ndata1_reader.get_file_info(path)
     elif suffix in ('.dm3', '.dm4'):
         return _dm3_reader.get_file_info(path)
     else:
@@ -873,17 +1219,18 @@ def clear_cache(path: Optional[pathlib.Path] = None):
     """Convenience function to clear cache for all readers."""
     _nhdf_reader.clear_cache(path)
     _dm3_reader.clear_cache(path)
+    _ndata1_reader.clear_cache(path)
 
 
 def is_supported_file(path: pathlib.Path) -> bool:
     """Check if a file is a supported format (EM or image)."""
     suffix = pathlib.Path(path).suffix.lower()
-    return suffix in ('.nhdf', '.dm3', '.dm4') or suffix in IMAGE_EXTENSIONS
+    return suffix in ('.nhdf', '.ndata1', '.dm3', '.dm4') or suffix in IMAGE_EXTENSIONS
 
 
 def get_supported_extensions() -> List[str]:
     """Get list of supported file extensions."""
-    return ['.nhdf', '.dm3', '.dm4'] + list(IMAGE_EXTENSIONS)
+    return ['.nhdf', '.ndata1', '.dm3', '.dm4'] + list(IMAGE_EXTENSIONS)
 
 
 def create_nhdf_data_from_array(
