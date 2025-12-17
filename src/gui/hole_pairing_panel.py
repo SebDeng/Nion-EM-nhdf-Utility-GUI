@@ -1612,16 +1612,17 @@ class HolePairingPanel(QWidget):
             return
 
         # Prompt for electron fluence
+        # PySide6 uses positional args: parent, title, label, value, minValue, maxValue, decimals
         fluence, ok = QInputDialog.getDouble(
             self,
             "Electron Fluence",
             "Enter electron fluence (e⁻/nm²):\n\n"
             "This value will be used to normalize ΔA.\n"
             "Enter 0 to skip normalization.",
-            value=0.0,
-            min=0.0,
-            max=1e12,
-            decimals=2
+            0.0,   # value
+            0.0,   # minValue
+            1e12,  # maxValue
+            2      # decimals
         )
 
         if not ok:
