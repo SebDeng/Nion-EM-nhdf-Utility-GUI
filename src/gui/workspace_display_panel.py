@@ -157,6 +157,9 @@ class WorkspaceDisplayPanel(WorkspacePanel):
             data['material_labels'] = self.display_panel.get_material_labels_data()
             # Save measurements data
             data['measurements'] = self.display_panel.get_measurements_data()
+        # Save Speckmann analysis state (if present)
+        if hasattr(self, 'speckmann_analysis_state') and self.speckmann_analysis_state:
+            data['speckmann_analysis_state'] = self.speckmann_analysis_state
         return data
 
     def restore_state(self, state: dict):
@@ -214,6 +217,10 @@ class WorkspaceDisplayPanel(WorkspacePanel):
         # Restore measurements
         if 'measurements' in state and state['measurements']:
             self.display_panel.restore_measurements(state['measurements'])
+
+        # Restore Speckmann analysis state
+        if 'speckmann_analysis_state' in state and state['speckmann_analysis_state']:
+            self.speckmann_analysis_state = state['speckmann_analysis_state']
 
     @classmethod
     def from_dict(cls, data: dict) -> 'WorkspaceDisplayPanel':

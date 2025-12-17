@@ -118,7 +118,6 @@ class ExperimentAnalysis:
     initial_voids: List[VoidSnapshot] = field(default_factory=list)
     final_voids: List[VoidSnapshot] = field(default_factory=list)
     pairings: List[VoidPairing] = field(default_factory=list)
-    contamination_zones: List[List[Tuple[float, float]]] = field(default_factory=list)
 
     # Derived statistics (computed after matching)
     n_grew: int = 0
@@ -165,7 +164,6 @@ class ExperimentAnalysis:
             'initial_voids': [v.to_dict() for v in self.initial_voids],
             'final_voids': [v.to_dict() for v in self.final_voids],
             'pairings': [p.to_dict() for p in self.pairings],
-            'contamination_zones': [[list(v) for v in zone] for zone in self.contamination_zones],
             'n_grew': self.n_grew,
             'n_new': self.n_new,
             'n_unchanged': self.n_unchanged,
@@ -192,7 +190,6 @@ class ExperimentAnalysis:
         exp.initial_voids = [VoidSnapshot.from_dict(v) for v in data.get('initial_voids', [])]
         exp.final_voids = [VoidSnapshot.from_dict(v) for v in data.get('final_voids', [])]
         exp.pairings = [VoidPairing.from_dict(p) for p in data.get('pairings', [])]
-        exp.contamination_zones = [[tuple(v) for v in zone] for zone in data.get('contamination_zones', [])]
         exp.n_grew = data.get('n_grew', 0)
         exp.n_new = data.get('n_new', 0)
         exp.n_unchanged = data.get('n_unchanged', 0)
@@ -372,24 +369,6 @@ def check_point_in_polygon(point: Tuple[float, float],
     return inside
 
 
-def check_contamination(void_centroid: Tuple[float, float],
-                        contamination_zones: List[List[Tuple[float, float]]]) -> bool:
-    """
-    Check if void centroid is inside any contamination zone polygon.
-
-    Args:
-        void_centroid: (x, y) in pixels or nm
-        contamination_zones: List of polygon vertex lists
-
-    Returns:
-        True if centroid is inside any contamination zone
-    """
-    for zone_vertices in contamination_zones:
-        if check_point_in_polygon(void_centroid, zone_vertices):
-            return True
-    return False
-
-
 def find_nearest_void(target: VoidSnapshot,
                       void_list: List[VoidSnapshot]) -> Optional[VoidSnapshot]:
     """Find the nearest void to target from a list."""
@@ -408,17 +387,29 @@ def find_nearest_void(target: VoidSnapshot,
     return nearest
 
 
+class MatchingDebugInfo:
+    """Debug information from matching process."""
+    def __init__(self):
+        self.initial_centroids_nm = []
+        self.final_centroids_nm = []
+        self.distance_matrix = []  # List of (initial_id, final_id, distance_nm)
+        self.matched_pairs = []    # List of (initial_id, final_id, distance_nm)
+        self.min_distance = float('inf')
+        self.max_distance = 0.0
+        self.tolerance_used = 0.0
+
+
 def match_voids(initial_voids: List[VoidSnapshot],
                 final_voids: List[VoidSnapshot],
                 source_center_nm: Tuple[float, float],
                 tolerance_nm: float = 3.0,
                 growth_threshold_nm2: float = 0.5,
-                contamination_zones: List[List[Tuple[float, float]]] = None
+                return_debug: bool = False
                 ) -> List[VoidPairing]:
     """
     Match voids between frames and categorize.
 
-    Uses Hungarian algorithm for optimal assignment to avoid greedy conflicts.
+    Uses greedy nearest-neighbor matching (similar to hole_pairing_panel.py).
 
     Args:
         initial_voids: Voids from first frame
@@ -426,15 +417,11 @@ def match_voids(initial_voids: List[VoidSnapshot],
         source_center_nm: (x, y) of vacancy source in nm
         tolerance_nm: Maximum distance for matching
         growth_threshold_nm2: Minimum ΔA to classify as "grew"
-        contamination_zones: List of contamination zone polygons (in nm coords)
+        return_debug: If True, returns (pairings, debug_info)
 
     Returns:
-        List of VoidPairing objects
+        List of VoidPairing objects (or tuple with debug info)
     """
-    from scipy.optimize import linear_sum_assignment
-
-    if contamination_zones is None:
-        contamination_zones = []
 
     n_initial = len(initial_voids)
     n_final = len(final_voids)
@@ -442,7 +429,15 @@ def match_voids(initial_voids: List[VoidSnapshot],
     pairings = []
     pairing_counter = 1
 
+    # Debug info
+    debug = MatchingDebugInfo()
+    debug.tolerance_used = tolerance_nm
+    debug.initial_centroids_nm = [(iv.void_id, iv.centroid_nm) for iv in initial_voids]
+    debug.final_centroids_nm = [(fv.void_id, fv.centroid_nm) for fv in final_voids]
+
     if n_initial == 0 and n_final == 0:
+        if return_debug:
+            return pairings, debug
         return pairings
 
     # Handle edge cases
@@ -450,7 +445,7 @@ def match_voids(initial_voids: List[VoidSnapshot],
         # All final voids are new
         for fv in final_voids:
             dist_to_source = euclidean_distance(fv.centroid_nm, source_center_nm)
-            near_contam = check_contamination(fv.centroid_nm, contamination_zones)
+            near_contam = False
             pairings.append(VoidPairing(
                 pairing_id=f"P{pairing_counter:03d}",
                 initial=None,
@@ -462,13 +457,15 @@ def match_voids(initial_voids: List[VoidSnapshot],
                 near_contamination=near_contam
             ))
             pairing_counter += 1
+        if return_debug:
+            return pairings, debug
         return pairings
 
     if n_final == 0:
         # All initial voids disappeared
         for iv in initial_voids:
             dist_to_source = euclidean_distance(iv.centroid_nm, source_center_nm)
-            near_contam = check_contamination(iv.centroid_nm, contamination_zones)
+            near_contam = False
             pairings.append(VoidPairing(
                 pairing_id=f"P{pairing_counter:03d}",
                 initial=iv,
@@ -480,38 +477,58 @@ def match_voids(initial_voids: List[VoidSnapshot],
                 near_contamination=near_contam
             ))
             pairing_counter += 1
+        if return_debug:
+            return pairings, debug
         return pairings
 
-    # Build cost matrix (distances)
-    cost = np.full((n_final, n_initial), 1e9)  # Large value instead of inf for scipy
-
-    for i, fv in enumerate(final_voids):
-        for j, iv in enumerate(initial_voids):
+    # Build distance matrix for debug info
+    for iv in initial_voids:
+        for fv in final_voids:
             dist = euclidean_distance(fv.centroid_nm, iv.centroid_nm)
-            if dist <= tolerance_nm:
-                cost[i, j] = dist
+            debug.distance_matrix.append((iv.void_id, fv.void_id, dist))
+            if dist < debug.min_distance:
+                debug.min_distance = dist
+            if dist > debug.max_distance:
+                debug.max_distance = dist
 
-    # Hungarian algorithm for optimal assignment
-    row_ind, col_ind = linear_sum_assignment(cost)
-
-    matched_final = set()
+    # Greedy nearest-neighbor matching (like hole_pairing_panel.py)
+    # This is simpler and works well for small numbers of voids
+    used_final_ids = set()
     matched_initial = set()
+    matched_final = set()
 
-    for fi, ii in zip(row_ind, col_ind):
-        if cost[fi, ii] < 1e8:  # Valid match (not the large placeholder)
-            fv = final_voids[fi]
-            iv = initial_voids[ii]
+    for i, iv in enumerate(initial_voids):
+        best_match = None
+        best_distance = float('inf')
+
+        for j, fv in enumerate(final_voids):
+            if j in used_final_ids:
+                continue
+
+            # Calculate distance between centroids in nm
+            dist = euclidean_distance(iv.centroid_nm, fv.centroid_nm)
+
+            if dist < tolerance_nm and dist < best_distance:
+                best_match = (j, fv)
+                best_distance = dist
+
+        if best_match is not None:
+            j, fv = best_match
             delta_A = fv.area_nm2 - iv.area_nm2
 
-            # Use final void centroid for distance calculation
-            dist_to_source = euclidean_distance(fv.centroid_nm, source_center_nm)
+            # Use average centroid for distance calculation
+            avg_centroid_nm = (
+                (iv.centroid_nm[0] + fv.centroid_nm[0]) / 2,
+                (iv.centroid_nm[1] + fv.centroid_nm[1]) / 2
+            )
+            dist_to_source = euclidean_distance(avg_centroid_nm, source_center_nm)
 
             # Determine void type based on area change
             if delta_A > growth_threshold_nm2:
                 void_type = VoidType.GREW
             elif delta_A < -growth_threshold_nm2:
-                # Void shrunk - unusual, but could happen
-                void_type = VoidType.GREW  # Still track as growth (negative)
+                # Void shrunk - still track
+                void_type = VoidType.GREW
             else:
                 void_type = VoidType.UNCHANGED
 
@@ -521,7 +538,7 @@ def match_voids(initial_voids: List[VoidSnapshot],
             else:
                 sqrt_A0_over_r = None
 
-            near_contam = check_contamination(fv.centroid_nm, contamination_zones)
+            near_contam = False
 
             pairings.append(VoidPairing(
                 pairing_id=f"P{pairing_counter:03d}",
@@ -531,17 +548,32 @@ def match_voids(initial_voids: List[VoidSnapshot],
                 delta_A_nm2=delta_A,
                 distance_to_source_nm=dist_to_source,
                 sqrt_A0_over_r=sqrt_A0_over_r,
-                near_contamination=near_contam
+                near_contamination=near_contam,
+                notes=f"Match dist: {best_distance:.2f} nm"
             ))
             pairing_counter += 1
-            matched_final.add(fi)
-            matched_initial.add(ii)
+            used_final_ids.add(j)
+            matched_initial.add(i)
+            matched_final.add(j)
+            debug.matched_pairs.append((iv.void_id, fv.void_id, best_distance))
 
     # Unmatched final voids → new
-    for i, fv in enumerate(final_voids):
-        if i not in matched_final:
+    for j, fv in enumerate(final_voids):
+        if j not in matched_final:
             dist_to_source = euclidean_distance(fv.centroid_nm, source_center_nm)
-            near_contam = check_contamination(fv.centroid_nm, contamination_zones)
+            near_contam = False
+
+            # Find nearest initial void for note
+            nearest_dist = float('inf')
+            nearest_id = None
+            for iv in initial_voids:
+                d = euclidean_distance(fv.centroid_nm, iv.centroid_nm)
+                if d < nearest_dist:
+                    nearest_dist = d
+                    nearest_id = iv.void_id
+
+            notes = f"Nearest initial: {nearest_id} @ {nearest_dist:.2f}nm" if nearest_id else ""
+
             pairings.append(VoidPairing(
                 pairing_id=f"P{pairing_counter:03d}",
                 initial=None,
@@ -550,19 +582,27 @@ def match_voids(initial_voids: List[VoidSnapshot],
                 delta_A_nm2=fv.area_nm2,
                 distance_to_source_nm=dist_to_source,
                 sqrt_A0_over_r=None,
-                near_contamination=near_contam
+                near_contamination=near_contam,
+                notes=notes
             ))
             pairing_counter += 1
 
     # Unmatched initial voids → disappeared
-    for j, iv in enumerate(initial_voids):
-        if j not in matched_initial:
+    for i, iv in enumerate(initial_voids):
+        if i not in matched_initial:
             dist_to_source = euclidean_distance(iv.centroid_nm, source_center_nm)
-            near_contam = check_contamination(iv.centroid_nm, contamination_zones)
+            near_contam = False
 
             # Find nearest final void to suggest what absorbed it
-            nearest = find_nearest_void(iv, final_voids)
-            notes = f"May have merged into {nearest.void_id}" if nearest else ""
+            nearest_dist = float('inf')
+            nearest = None
+            for fv in final_voids:
+                d = euclidean_distance(iv.centroid_nm, fv.centroid_nm)
+                if d < nearest_dist:
+                    nearest_dist = d
+                    nearest = fv
+
+            notes = f"Nearest final: {nearest.void_id} @ {nearest_dist:.2f}nm" if nearest else ""
 
             pairings.append(VoidPairing(
                 pairing_id=f"P{pairing_counter:03d}",
@@ -577,6 +617,8 @@ def match_voids(initial_voids: List[VoidSnapshot],
             ))
             pairing_counter += 1
 
+    if return_debug:
+        return pairings, debug
     return pairings
 
 
@@ -598,7 +640,7 @@ def export_session_to_csv(session: SpeckmannSession, filepath: str):
         # Section 1: Experiment Info
         writer.writerow(['# Experiment Info'])
         writer.writerow([
-            'experiment_id', 'filename', 'temperature_C',
+            'filename', 'temperature_C',
             'subscan_center_x_nm', 'subscan_center_y_nm', 'subscan_fov_nm',
             'total_frames', 'analyzed_frame', 'frame_time_s',
             'electron_dose_e_per_nm2', 'n_grew', 'n_new', 'n_unchanged', 'n_disappeared'
@@ -606,7 +648,6 @@ def export_session_to_csv(session: SpeckmannSession, filepath: str):
 
         for exp in session.experiments:
             writer.writerow([
-                exp.experiment_id,
                 exp.filename,
                 exp.temperature_C if exp.temperature_C is not None else '',
                 f"{exp.subscan_center_x_nm:.2f}",
@@ -627,12 +668,9 @@ def export_session_to_csv(session: SpeckmannSession, filepath: str):
         # Section 2: Void Pairings
         writer.writerow(['# Void Pairings'])
         writer.writerow([
-            'experiment_id', 'void_id', 'void_type',
+            'filename', 'temperature_C', 'void_id', 'void_type',
             'initial_area_nm2', 'final_area_nm2', 'delta_A_nm2',
-            'initial_centroid_x_nm', 'initial_centroid_y_nm',
-            'final_centroid_x_nm', 'final_centroid_y_nm',
-            'distance_to_source_nm', 'sqrt_A0_over_r',
-            'near_contamination', 'notes'
+            'distance_to_source_nm', 'sqrt_A0_over_r', 'notes'
         ])
 
         for exp in session.experiments:
@@ -641,19 +679,15 @@ def export_session_to_csv(session: SpeckmannSession, filepath: str):
                 void_id = p.final.void_id if p.final else p.initial.void_id
 
                 writer.writerow([
-                    exp.experiment_id,
+                    exp.filename,
+                    exp.temperature_C if exp.temperature_C is not None else '',
                     void_id,
                     p.void_type.value,
                     f"{p.initial.area_nm2:.3f}" if p.initial else '0',
                     f"{p.final.area_nm2:.3f}" if p.final else '0',
                     f"{p.delta_A_nm2:.3f}",
-                    f"{p.initial.centroid_nm[0]:.2f}" if p.initial else '',
-                    f"{p.initial.centroid_nm[1]:.2f}" if p.initial else '',
-                    f"{p.final.centroid_nm[0]:.2f}" if p.final else '',
-                    f"{p.final.centroid_nm[1]:.2f}" if p.final else '',
                     f"{p.distance_to_source_nm:.2f}",
                     f"{p.sqrt_A0_over_r:.4f}" if p.sqrt_A0_over_r else '',
-                    str(p.near_contamination),
                     p.notes
                 ])
 
