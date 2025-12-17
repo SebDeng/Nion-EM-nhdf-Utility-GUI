@@ -31,7 +31,9 @@ class PipetteDetector:
 
     def __init__(self):
         self.min_area_px = 10  # Minimum region area in pixels
-        self.max_vertices = 20  # Maximum polygon vertices (balanced for storage/accuracy)
+        self.min_vertices = 10  # Minimum polygon vertices
+        self.max_vertices = 100  # Maximum polygon vertices (hard limit)
+        self.vertices_per_perimeter_px = 8  # Target: 1 vertex per N pixels of perimeter
         self.default_tolerance = 0.10  # Default threshold tolerance (10%)
 
     def detect_region(
@@ -134,8 +136,8 @@ class PipetteDetector:
         if boundary_vertices is None or len(boundary_vertices) < 3:
             return None  # Could not extract valid boundary
 
-        # Simplify to manageable vertex count
-        simplified = self._simplify_contour(boundary_vertices, self.max_vertices)
+        # Simplify with adaptive vertex count based on shape complexity
+        simplified = self._simplify_contour_adaptive(boundary_vertices)
 
         # Scale vertices back to original image coordinates
         if scale_factor != 1.0:
@@ -224,7 +226,8 @@ class PipetteDetector:
         if boundary_vertices is None or len(boundary_vertices) < 3:
             return None
 
-        simplified = self._simplify_contour(boundary_vertices, self.max_vertices)
+        # Simplify with adaptive vertex count based on shape complexity
+        simplified = self._simplify_contour_adaptive(boundary_vertices)
 
         # Scale vertices back to original image coordinates
         if scale_factor != 1.0:
@@ -342,14 +345,173 @@ class PipetteDetector:
 
         return contour if len(contour) >= 3 else None
 
+    def _calculate_perimeter(self, vertices: List[Tuple[float, float]]) -> float:
+        """Calculate the perimeter length of a polygon."""
+        if len(vertices) < 2:
+            return 0.0
+
+        perimeter = 0.0
+        n = len(vertices)
+        for i in range(n):
+            x1, y1 = vertices[i]
+            x2, y2 = vertices[(i + 1) % n]
+            perimeter += np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+        return perimeter
+
+    def _simplify_contour_adaptive(
+        self,
+        vertices: List[Tuple[float, float]]
+    ) -> List[Tuple[float, float]]:
+        """
+        Simplify contour with adaptive vertex count based on shape complexity.
+
+        Uses perimeter length to determine appropriate vertex count, then applies
+        Ramer-Douglas-Peucker algorithm for high-quality simplification.
+
+        Args:
+            vertices: List of (x, y) coordinates
+
+        Returns:
+            Simplified list of vertices
+        """
+        n = len(vertices)
+
+        if n <= self.min_vertices:
+            return vertices
+
+        # Calculate perimeter to determine appropriate vertex count
+        perimeter = self._calculate_perimeter(vertices)
+
+        # Adaptive target: 1 vertex per N pixels of perimeter
+        target_vertices = int(perimeter / self.vertices_per_perimeter_px)
+
+        # Clamp to min/max bounds
+        target_vertices = max(self.min_vertices, min(self.max_vertices, target_vertices))
+
+        if n <= target_vertices:
+            return vertices
+
+        # Use Ramer-Douglas-Peucker for high-quality simplification
+        return self._rdp_simplify(vertices, target_vertices)
+
+    def _rdp_simplify(
+        self,
+        vertices: List[Tuple[float, float]],
+        target_vertices: int
+    ) -> List[Tuple[float, float]]:
+        """
+        Simplify polygon using Ramer-Douglas-Peucker algorithm.
+
+        Binary searches for the epsilon value that produces approximately
+        the target number of vertices.
+
+        Args:
+            vertices: List of (x, y) coordinates
+            target_vertices: Target number of vertices
+
+        Returns:
+            Simplified list of vertices
+        """
+        n = len(vertices)
+
+        if n <= target_vertices:
+            return vertices
+
+        # Calculate bounding box for epsilon scaling
+        xs = [v[0] for v in vertices]
+        ys = [v[1] for v in vertices]
+        bbox_diag = np.sqrt((max(xs) - min(xs))**2 + (max(ys) - min(ys))**2)
+
+        # Binary search for epsilon that gives target vertex count
+        eps_low = 0.0
+        eps_high = bbox_diag * 0.5
+        best_result = vertices
+        best_diff = n
+
+        for _ in range(15):  # Max 15 iterations for convergence
+            eps_mid = (eps_low + eps_high) / 2
+            result = self._rdp_recursive(vertices, eps_mid)
+            result_count = len(result)
+
+            diff = abs(result_count - target_vertices)
+            if diff < best_diff:
+                best_diff = diff
+                best_result = result
+
+            if result_count == target_vertices:
+                return result
+            elif result_count > target_vertices:
+                eps_low = eps_mid
+            else:
+                eps_high = eps_mid
+
+            # Early exit if close enough
+            if diff <= 2:
+                break
+
+        return best_result
+
+    def _rdp_recursive(
+        self,
+        vertices: List[Tuple[float, float]],
+        epsilon: float
+    ) -> List[Tuple[float, float]]:
+        """
+        Ramer-Douglas-Peucker recursive implementation.
+
+        Args:
+            vertices: List of (x, y) coordinates
+            epsilon: Distance threshold
+
+        Returns:
+            Simplified list of vertices
+        """
+        if len(vertices) < 3:
+            return vertices
+
+        # Find the point with maximum distance from line
+        start = np.array(vertices[0])
+        end = np.array(vertices[-1])
+
+        # Handle case where start == end (closed polygon segment)
+        line_vec = end - start
+        line_len = np.linalg.norm(line_vec)
+
+        max_dist = 0.0
+        max_idx = 0
+
+        for i in range(1, len(vertices) - 1):
+            point = np.array(vertices[i])
+
+            if line_len < 1e-10:
+                # Start and end are same point, use distance to start
+                dist = np.linalg.norm(point - start)
+            else:
+                # Distance from point to line segment
+                t = max(0, min(1, np.dot(point - start, line_vec) / (line_len ** 2)))
+                projection = start + t * line_vec
+                dist = np.linalg.norm(point - projection)
+
+            if dist > max_dist:
+                max_dist = dist
+                max_idx = i
+
+        # If max distance > epsilon, recursively simplify
+        if max_dist > epsilon:
+            left = self._rdp_recursive(vertices[:max_idx + 1], epsilon)
+            right = self._rdp_recursive(vertices[max_idx:], epsilon)
+            return left[:-1] + right
+        else:
+            return [vertices[0], vertices[-1]]
+
     def _simplify_contour(
         self,
         vertices: List[Tuple[float, float]],
         max_vertices: int
     ) -> List[Tuple[float, float]]:
         """
-        Simplify contour using fast uniform sampling.
-        Optimized for speed over perfect shape preservation.
+        Legacy method: Simplify contour using fast uniform sampling.
+        Kept for backwards compatibility.
 
         Args:
             vertices: List of (x, y) coordinates
