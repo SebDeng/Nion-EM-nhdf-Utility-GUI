@@ -31,7 +31,8 @@ class PipetteDetector:
 
     def __init__(self):
         self.min_area_px = 10  # Minimum region area in pixels
-        self.min_vertices = 10  # Minimum polygon vertices
+        self.preview_vertices = 20  # Fast preview vertex count
+        self.min_vertices = 10  # Minimum polygon vertices for final
         self.max_vertices = 100  # Maximum polygon vertices (hard limit)
         self.vertices_per_perimeter_px = 8  # Target: 1 vertex per N pixels of perimeter
         self.default_tolerance = 0.10  # Default threshold tolerance (10%)
@@ -136,8 +137,8 @@ class PipetteDetector:
         if boundary_vertices is None or len(boundary_vertices) < 3:
             return None  # Could not extract valid boundary
 
-        # Simplify with adaptive vertex count based on shape complexity
-        simplified = self._simplify_contour_adaptive(boundary_vertices)
+        # Fast simplification for preview (adaptive applied on finalize)
+        simplified = self._simplify_contour(boundary_vertices, self.preview_vertices)
 
         # Scale vertices back to original image coordinates
         if scale_factor != 1.0:
@@ -226,8 +227,8 @@ class PipetteDetector:
         if boundary_vertices is None or len(boundary_vertices) < 3:
             return None
 
-        # Simplify with adaptive vertex count based on shape complexity
-        simplified = self._simplify_contour_adaptive(boundary_vertices)
+        # Fast simplification for preview (adaptive applied on finalize)
+        simplified = self._simplify_contour(boundary_vertices, self.preview_vertices)
 
         # Scale vertices back to original image coordinates
         if scale_factor != 1.0:
@@ -344,6 +345,48 @@ class PipetteDetector:
                 break
 
         return contour if len(contour) >= 3 else None
+
+    def finalize_polygon(
+        self,
+        result: DetectionResult,
+        original_shape: Tuple[int, int] = None
+    ) -> List[Tuple[float, float]]:
+        """
+        Finalize polygon with adaptive vertex count.
+
+        Call this after user confirms the detection to get high-quality vertices.
+        Re-extracts boundary from mask and applies adaptive RDP simplification.
+
+        Args:
+            result: DetectionResult from detect_region or detect_with_threshold
+            original_shape: (height, width) of original image for coordinate scaling
+
+        Returns:
+            List of (x, y) vertices with adaptive count based on shape complexity
+        """
+        if result is None:
+            return []
+
+        # Re-extract boundary from mask for full resolution
+        boundary_vertices = self._extract_boundary(result.mask)
+
+        if boundary_vertices is None or len(boundary_vertices) < 3:
+            # Fall back to existing vertices
+            return list(result.vertices)
+
+        # Apply adaptive simplification with RDP
+        simplified = self._simplify_contour_adaptive(boundary_vertices)
+
+        # Scale vertices back to original image coordinates if mask was downsampled
+        if original_shape is not None:
+            mask_h, mask_w = result.mask.shape
+            orig_h, orig_w = original_shape
+            if mask_h != orig_h or mask_w != orig_w:
+                scale_x = orig_w / mask_w
+                scale_y = orig_h / mask_h
+                simplified = [(x * scale_x, y * scale_y) for x, y in simplified]
+
+        return simplified
 
     def _calculate_perimeter(self, vertices: List[Tuple[float, float]]) -> float:
         """Calculate the perimeter length of a polygon."""

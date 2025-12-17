@@ -321,8 +321,21 @@ class PipettePreviewDialog(QDialog):
             self.reject()
             return
 
-        # Emit vertices
-        self.polygon_confirmed.emit(list(self._current_result.vertices))
+        # Get original image shape for coordinate scaling
+        img = self._image_data
+        if len(img.shape) == 3:
+            orig_shape = img.shape[:2]  # (height, width)
+        else:
+            orig_shape = img.shape
+
+        # Finalize with adaptive vertex count (RDP applied here, not during preview)
+        final_vertices = self._detector.finalize_polygon(
+            self._current_result,
+            original_shape=orig_shape
+        )
+
+        # Emit finalized vertices
+        self.polygon_confirmed.emit(final_vertices)
         self.accept()
 
     def get_result(self) -> Optional[DetectionResult]:
