@@ -163,11 +163,11 @@ class LineProfileOverlay(QObject):
         x2, y2 = p2.x(), p2.y()
         line_length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
 
-        if line_length == 0:
-            return
+        if line_length < 1:
+            return  # Line too short for meaningful profile
 
         # Number of points to sample along the line
-        num_points = int(line_length * 2)  # Sample at ~0.5 pixel resolution
+        num_points = max(2, int(line_length * 2))  # Sample at ~0.5 pixel resolution, minimum 2 points
 
         # Create coordinates along the line
         x_coords = np.linspace(x1, x2, num_points)
@@ -486,4 +486,8 @@ class LineProfileOverlay(QObject):
     def refresh_profile(self):
         """Re-extract and emit the current profile data (used when switching panels)."""
         if self.line_roi is not None and self.image_item.image is not None:
-            self._extract_profile()
+            try:
+                self._extract_profile()
+            except Exception:
+                # Silently ignore errors during panel switch (e.g., mismatched image sizes)
+                pass
