@@ -1575,13 +1575,41 @@ class MeasurementOverlay(QObject):
         return perimeter
 
     def _calculate_polygon_centroid(self, vertices: List[Tuple[float, float]]) -> Tuple[float, float]:
-        """Calculate the centroid of a polygon."""
+        """
+        Calculate the true centroid (center of mass) of a polygon using the shoelace formula.
+
+        This is more accurate than simple average of vertices, especially for
+        non-convex polygons. Uses the formula:
+            Cx = (1/6A) * sum((xi + xi+1) * (xi*yi+1 - xi+1*yi))
+            Cy = (1/6A) * sum((yi + yi+1) * (xi*yi+1 - xi+1*yi))
+        where A is the signed area of the polygon.
+        """
         n = len(vertices)
         if n == 0:
             return (0.0, 0.0)
+        if n < 3:
+            # For degenerate cases, use simple average
+            return (sum(v[0] for v in vertices) / n, sum(v[1] for v in vertices) / n)
 
-        cx = sum(v[0] for v in vertices) / n
-        cy = sum(v[1] for v in vertices) / n
+        signed_area = 0.0
+        cx = cy = 0.0
+
+        for i in range(n):
+            j = (i + 1) % n
+            cross = vertices[i][0] * vertices[j][1] - vertices[j][0] * vertices[i][1]
+            signed_area += cross
+            cx += (vertices[i][0] + vertices[j][0]) * cross
+            cy += (vertices[i][1] + vertices[j][1]) * cross
+
+        signed_area *= 0.5
+
+        # Handle degenerate polygon (zero area) - fall back to simple average
+        if abs(signed_area) < 1e-10:
+            return (sum(v[0] for v in vertices) / n, sum(v[1] for v in vertices) / n)
+
+        cx /= (6.0 * signed_area)
+        cy /= (6.0 * signed_area)
+
         return (cx, cy)
 
     def _point_in_polygon(self, point: Tuple[float, float], vertices: List[Tuple[float, float]]) -> bool:
@@ -2008,6 +2036,7 @@ class MeasurementOverlay(QObject):
         # Store metadata
         polygon_roi._measurement_color = color
         polygon_roi._measurement_id = self.polygon_id_counter
+        polygon_roi._polygon_id = self.polygon_id_counter  # Also set _polygon_id for consistency
 
         # PERFORMANCE: Enable caching for better rendering performance
         polygon_roi.setCacheMode(QGraphicsItem.CacheMode.DeviceCoordinateCache)

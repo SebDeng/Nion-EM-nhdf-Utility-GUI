@@ -145,6 +145,21 @@ class WorkspaceMainWindow(QMainWindow):
         self._file_browser_dock.setMinimumWidth(250)
         self.addDockWidget(Qt.LeftDockWidgetArea, self._file_browser_dock)
 
+        # Hole Pairing Panel dock (below file browser)
+        from src.gui.hole_pairing_panel import HolePairingPanel
+
+        self._hole_pairing_dock = QDockWidget("Hole Pairing", self)
+        self._hole_pairing_dock.setObjectName("HolePairingDock")
+        self._hole_pairing_panel = HolePairingPanel()
+        self._hole_pairing_dock.setWidget(self._hole_pairing_panel)
+        self._hole_pairing_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self._hole_pairing_dock.setMinimumWidth(280)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self._hole_pairing_dock)
+
+        # Stack below file browser (vertical split)
+        self.splitDockWidget(self._file_browser_dock, self._hole_pairing_dock, Qt.Vertical)
+        self._hole_pairing_dock.setVisible(False)  # Start hidden
+
         # Right dock - Metadata Panel (without Export button - moved to File menu)
         self._metadata_dock = QDockWidget("Metadata", self)
         self._metadata_dock.setObjectName("MetadataDock")
@@ -244,6 +259,7 @@ class WorkspaceMainWindow(QMainWindow):
         view_menu.addAction(self._file_browser_dock.toggleViewAction())
         view_menu.addAction(self._metadata_dock.toggleViewAction())
         view_menu.addAction(self._analysis_dock.toggleViewAction())
+        view_menu.addAction(self._hole_pairing_dock.toggleViewAction())
 
         view_menu.addSeparator()
 
@@ -331,6 +347,13 @@ class WorkspaceMainWindow(QMainWindow):
         material_calc_action.setShortcut(QKeySequence("Ctrl+M"))
         material_calc_action.triggered.connect(self._on_show_material_calculator)
         tools_menu.addAction(material_calc_action)
+
+        tools_menu.addSeparator()
+
+        hole_pairing_action = QAction("&Hole Pairing Analysis...", self)
+        hole_pairing_action.setShortcut(QKeySequence("Ctrl+Shift+H"))
+        hole_pairing_action.triggered.connect(self._on_show_hole_pairing)
+        tools_menu.addAction(hole_pairing_action)
 
         # Export menu
         export_menu = menubar.addMenu("&Export")
@@ -1713,6 +1736,13 @@ class WorkspaceMainWindow(QMainWindow):
 
         panel.display_panel.add_material_label(material_data)
 
+    def _on_show_hole_pairing(self):
+        """Show the hole pairing panel for vacancy diffusion analysis."""
+        self._hole_pairing_dock.setVisible(True)
+        self._hole_pairing_panel.set_workspace(self._workspace)
+        self._hole_pairing_panel.set_main_window(self)
+        self._hole_pairing_panel._refresh_panel_list()
+
     def _on_about(self):
         """Show about dialog."""
         dialog = QDialog(self)
@@ -2064,11 +2094,17 @@ class WorkspaceMainWindow(QMainWindow):
                             'vertices': vertices
                         })
 
+        # Get hole pairing session data
+        hole_pairing_session = None
+        if hasattr(self, '_hole_pairing_panel') and self._hole_pairing_panel:
+            hole_pairing_session = self._hole_pairing_panel.to_dict()
+
         # Update workspace state
         self._workspace_manager.update_current_workspace_state(
             layout=layout,
             panel_states=panel_states,
-            measurements=measurements
+            measurements=measurements,
+            hole_pairing_session=hole_pairing_session
         )
 
     def _switch_to_workspace(self, workspace_uuid: str):
@@ -2105,6 +2141,18 @@ class WorkspaceMainWindow(QMainWindow):
                     panel.set_data(data, file_path, skip_overlay_warning=True)
                     panel.restore_state(state)
                     # Note: measurements are now restored per-panel in restore_state()
+
+        # Restore hole pairing session
+        if hasattr(self, '_hole_pairing_panel') and self._hole_pairing_panel:
+            if workspace.hole_pairing_session:
+                self._hole_pairing_panel.from_dict(workspace.hole_pairing_session)
+                self._hole_pairing_panel.set_workspace(self._workspace)
+            else:
+                # Clear if no session data
+                self._hole_pairing_panel._session = None
+                from src.gui.hole_pairing_data import PairingSession
+                self._hole_pairing_panel._session = PairingSession()
+                self._hole_pairing_panel._refresh_panel_list()
 
         # Update menu and tab bar
         self._update_workspace_list_menu()

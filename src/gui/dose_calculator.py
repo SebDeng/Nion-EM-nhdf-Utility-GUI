@@ -121,17 +121,23 @@ class DoseCalculatorDialog(QDialog):
         self._electrons_per_pixel_label.setStyleSheet("font-family: monospace; font-weight: bold;")
         results_layout.addWidget(self._electrons_per_pixel_label, 0, 1)
 
-        # Electron dose
+        # Electron dose (per frame)
         results_layout.addWidget(QLabel("Electron Dose:"), 1, 0)
         self._dose_label = QLabel("--")
         self._dose_label.setStyleSheet("font-family: monospace; font-weight: bold; color: #4a9eff;")
         results_layout.addWidget(self._dose_label, 1, 1)
 
+        # Electron dose (series) = dose × num_frames
+        results_layout.addWidget(QLabel("Electron Dose (Series):"), 2, 0)
+        self._dose_series_label = QLabel("--")
+        self._dose_series_label.setStyleSheet("font-family: monospace; font-weight: bold; color: #ff6a9e;")
+        results_layout.addWidget(self._dose_series_label, 2, 1)
+
         # Electron flux
-        results_layout.addWidget(QLabel("Electron Flux:"), 2, 0)
+        results_layout.addWidget(QLabel("Electron Flux:"), 3, 0)
         self._flux_label = QLabel("--")
         self._flux_label.setStyleSheet("font-family: monospace; font-weight: bold; color: #4aff9e;")
-        results_layout.addWidget(self._flux_label, 2, 1)
+        results_layout.addWidget(self._flux_label, 3, 1)
 
         layout.addWidget(results_group)
 
@@ -179,6 +185,7 @@ class DoseCalculatorDialog(QDialog):
         formula_text = QLabel(
             "• Electrons/pixel = (Probe Current × Pixel Time) / e\n"
             "• Dose = Electrons/pixel / Pixel Area\n"
+            "• Dose (Series) = Dose × Num Frames\n"
             "• Flux = Dose / Pixel Time\n"
             "• Electrons/frame = Electrons/pixel × Num Pixels\n"
             "• Total (Series) = Electrons/frame × Num Frames\n"
@@ -237,10 +244,15 @@ class DoseCalculatorDialog(QDialog):
         else:
             self._pixel_time_label.setText("Not available")
 
-        # FOV
-        fov = self._data.context_fov_nm
-        if fov is not None:
-            self._fov_label.setText(f"{fov:.1f} nm")
+        # FOV - calculate from pixel size × image dimensions (correct for subscans)
+        if pixel_size is not None and self._data.is_2d_image:
+            shape = self._data.frame_shape
+            fov_x = pixel_size * shape[1]  # width
+            fov_y = pixel_size * shape[0]  # height
+            if abs(fov_x - fov_y) < 0.01:  # Square FOV
+                self._fov_label.setText(f"{fov_x:.2f} nm")
+            else:
+                self._fov_label.setText(f"{fov_x:.2f} × {fov_y:.2f} nm")
         else:
             actual_fov = self._data.actual_fov
             if actual_fov:
@@ -295,13 +307,18 @@ class DoseCalculatorDialog(QDialog):
         e_per_px = result['electrons_per_pixel']
         self._electrons_per_pixel_label.setText(f"{e_per_px:.2f} e⁻/pixel")
 
-        # Dose
+        # Dose (per frame)
+        num_frames = result.get('num_frames', 1)
         if use_angstrom:
             dose = result['dose_e_per_A2']
             self._dose_label.setText(f"{dose:.4f} e⁻/Ų")
+            dose_series = dose * num_frames
+            self._dose_series_label.setText(f"{dose_series:.4f} e⁻/Ų ({num_frames} frames)")
         else:
             dose = result['dose_e_per_nm2']
             self._dose_label.setText(f"{dose:.2f} e⁻/nm²")
+            dose_series = dose * num_frames
+            self._dose_series_label.setText(f"{dose_series:.2e} e⁻/nm² ({num_frames} frames)")
 
         # Flux
         if use_angstrom:
@@ -314,7 +331,7 @@ class DoseCalculatorDialog(QDialog):
         # Electron counts
         e_per_frame = result.get('electrons_per_frame', 0)
         total_e = result.get('total_electrons_series', 0)
-        num_frames = result.get('num_frames', 1)
+        # num_frames already defined above for dose_series calculation
 
         # Format electron counts with appropriate notation
         self._electrons_per_frame_label.setText(f"{e_per_frame:.3e} e⁻")
@@ -340,6 +357,7 @@ class DoseCalculatorDialog(QDialog):
         """Clear result labels."""
         self._electrons_per_pixel_label.setText("--")
         self._dose_label.setText("--")
+        self._dose_series_label.setText("--")
         self._flux_label.setText("--")
         self._electrons_per_frame_label.setText("--")
         self._total_electrons_label.setText("--")

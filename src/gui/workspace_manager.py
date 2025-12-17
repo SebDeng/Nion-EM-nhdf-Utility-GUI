@@ -30,6 +30,7 @@ class WorkspaceState:
     layout: Dict[str, Any]  # Hierarchical layout structure
     panel_states: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # panel_id -> state
     measurements: List[Dict[str, Any]] = field(default_factory=list)  # Measurement data
+    hole_pairing_session: Optional[Dict[str, Any]] = None  # Hole pairing data for vacancy analysis
 
     @classmethod
     def create_new(cls, name: str = "Workspace") -> 'WorkspaceState':
@@ -55,7 +56,8 @@ class WorkspaceState:
             modified=data.get('modified', datetime.now().isoformat()),
             layout=data.get('layout', {'type': 'panel'}),
             panel_states=data.get('panel_states', {}),
-            measurements=data.get('measurements', [])
+            measurements=data.get('measurements', []),
+            hole_pairing_session=data.get('hole_pairing_session')
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -67,7 +69,8 @@ class WorkspaceState:
             'modified': self.modified,
             'layout': self.layout,
             'panel_states': self.panel_states,
-            'measurements': self.measurements
+            'measurements': self.measurements,
+            'hole_pairing_session': self.hole_pairing_session
         }
 
     def touch(self):
@@ -290,7 +293,8 @@ class WorkspaceManager(QObject):
 
     def update_current_workspace_state(self, layout: Dict[str, Any],
                                         panel_states: Dict[str, Dict[str, Any]],
-                                        measurements: List[Dict[str, Any]]):
+                                        measurements: List[Dict[str, Any]],
+                                        hole_pairing_session: Optional[Dict[str, Any]] = None):
         """
         Update the current workspace's state (called before switching).
 
@@ -298,12 +302,14 @@ class WorkspaceManager(QObject):
             layout: Current layout structure
             panel_states: Current panel states
             measurements: Current measurements
+            hole_pairing_session: Hole pairing analysis data (optional)
         """
         if self._current_workspace_uuid and self._current_workspace_uuid in self._workspaces:
             workspace = self._workspaces[self._current_workspace_uuid]
             workspace.layout = layout
             workspace.panel_states = panel_states
             workspace.measurements = measurements
+            workspace.hole_pairing_session = hole_pairing_session
             workspace.touch()
 
     def get_next_workspace_uuid(self) -> Optional[str]:
