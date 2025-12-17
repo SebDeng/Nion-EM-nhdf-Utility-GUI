@@ -415,16 +415,16 @@ class SpeckmannAnalysisDialog(QDialog):
 
         # Get all panels from workspace
         panels = self._workspace.panels
-        for panel in panels:
-            # Check if panel has loaded data
-            display_panel = getattr(panel, 'display_panel', None) or getattr(panel, '_display_panel', None)
-            if display_panel and hasattr(display_panel, '_nhdf_data') and display_panel._nhdf_data is not None:
-                data = display_panel._nhdf_data
-                title = getattr(panel, 'title', 'Panel')
-                filename = os.path.basename(getattr(data, 'filepath', ''))
+        for i, panel in enumerate(panels):
+            # Check if panel has a loaded file
+            file_path = getattr(panel, 'current_file_path', None)
+            if file_path:
+                filename = os.path.basename(file_path)
+                label = f"Panel {i+1}: {filename}"
+            else:
+                label = f"Panel {i+1} (empty)"
 
-                label = f"{title}: {filename}" if filename else title
-                self._panel_combo.addItem(label, panel)
+            self._panel_combo.addItem(label, panel)
 
     def _on_panel_selected(self, index: int):
         """Handle panel selection change."""
@@ -436,10 +436,11 @@ class SpeckmannAnalysisDialog(QDialog):
         self._current_panel = panel
         display_panel = getattr(panel, 'display_panel', None) or getattr(panel, '_display_panel', None)
 
-        if not display_panel or not hasattr(display_panel, '_nhdf_data'):
+        if not display_panel:
             return
 
-        self._nhdf_data = display_panel._nhdf_data
+        # Get the data - it's stored as _data, not _nhdf_data
+        self._nhdf_data = getattr(display_panel, '_data', None)
         if self._nhdf_data is None:
             return
 
@@ -450,10 +451,10 @@ class SpeckmannAnalysisDialog(QDialog):
         else:
             self._calibration_scale = 1.0
 
-        # Update file info
-        filepath = getattr(self._nhdf_data, 'filepath', '')
-        filename = os.path.basename(filepath)
-        self._file_label.setText(f"File: {filename}")
+        # Update file info - use panel's file path as primary source
+        filepath = getattr(panel, 'current_file_path', '') or getattr(self._nhdf_data, 'filepath', '')
+        filename = os.path.basename(filepath) if filepath else ''
+        self._file_label.setText(f"File: {filename}" if filename else "File: --")
 
         # Extract temperature from path
         temp = extract_temperature_from_path(filepath)
