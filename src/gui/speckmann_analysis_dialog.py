@@ -414,7 +414,7 @@ class SpeckmannAnalysisDialog(QDialog):
             return
 
         # Get all panels from workspace
-        panels = self._workspace.get_all_panels()
+        panels = self._workspace.panels
         for panel in panels:
             # Check if panel has loaded data
             display_panel = getattr(panel, 'display_panel', None) or getattr(panel, '_display_panel', None)
