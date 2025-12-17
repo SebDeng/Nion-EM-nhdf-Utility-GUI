@@ -24,6 +24,7 @@ from .speckmann_analysis_data import (
     calculate_polygon_area, euclidean_distance, match_voids, export_session_to_csv
 )
 from .pipette_detector import PipetteDetector
+from .pipette_dialog import PipettePreviewDialog
 
 
 class FramePreviewWidget(QWidget):
@@ -548,7 +549,7 @@ class SpeckmannAnalysisDialog(QDialog):
             self._detect_contamination_at(x, y)
 
     def _detect_void_at(self, x: float, y: float, frame_index: int, target: str):
-        """Detect void at click position using pipette."""
+        """Detect void at click position using pipette with preview dialog."""
         if self._nhdf_data is None:
             return
 
@@ -564,13 +565,41 @@ class SpeckmannAnalysisDialog(QDialog):
         else:
             return
 
-        # Detect region
-        result = self._detector.detect_region(frame_data, x, y, threshold_tolerance=0.15)
-        if result is None:
+        # Get calibration for the dialog
+        calibrations = getattr(self._nhdf_data, 'dimensional_calibrations', None)
+        calibration = calibrations[-1] if calibrations and len(calibrations) > 0 else None
+
+        # Open pipette preview dialog for threshold adjustment
+        dialog = PipettePreviewDialog(
+            image_data=frame_data,
+            click_x=x,
+            click_y=y,
+            calibration=calibration,
+            parent=self
+        )
+
+        # Store target for use in callback
+        self._pending_pipette_target = target
+        self._pending_pipette_frame = frame_index
+
+        # Connect signal and show dialog
+        dialog.polygon_confirmed.connect(self._on_pipette_confirmed)
+
+        if dialog.exec() != QDialog.Accepted:
+            # User cancelled
+            self._pending_pipette_target = None
+            self._pending_pipette_frame = None
+
+    def _on_pipette_confirmed(self, vertices: List[Tuple[float, float]]):
+        """Handle confirmed polygon from pipette dialog."""
+        if not vertices or len(vertices) < 3:
             return
 
-        # Finalize polygon with adaptive vertices
-        vertices = self._detector.finalize_polygon(result, original_shape=frame_data.shape[:2])
+        target = self._pending_pipette_target
+        frame_index = self._pending_pipette_frame
+
+        if target is None:
+            return
 
         # Calculate metrics
         centroid = calculate_proper_centroid(vertices)
@@ -593,7 +622,7 @@ class SpeckmannAnalysisDialog(QDialog):
             self._initial_voids.append(void)
             self._initial_preview.add_polygon(vertices, color='lime', label=void_id)
             self._initial_count_label.setText(f"Voids: {len(self._initial_voids)}")
-        else:  # final
+        elif target == 'final':
             void_id = f"F{len(self._final_voids)+1:03d}"
             void = VoidSnapshot(
                 void_id=void_id,
@@ -607,41 +636,25 @@ class SpeckmannAnalysisDialog(QDialog):
             self._final_voids.append(void)
             self._final_preview.add_polygon(vertices, color='cyan', label=void_id)
             self._final_count_label.setText(f"Voids: {len(self._final_voids)}")
+        elif target == 'contamination':
+            # Convert to nm coordinates for contamination zones
+            vertices_nm = [(v[0] * self._calibration_scale, v[1] * self._calibration_scale)
+                          for v in vertices]
+            self._contamination_zones.append(vertices_nm)
+
+            # Show on both previews
+            self._initial_preview.add_polygon(vertices, color='red', label=f"C{len(self._contamination_zones)}")
+            self._final_preview.add_polygon(vertices, color='red', label=f"C{len(self._contamination_zones)}")
+            self._contam_count_label.setText(f"Zones: {len(self._contamination_zones)}")
+
+        # Clear pending state
+        self._pending_pipette_target = None
+        self._pending_pipette_frame = None
 
     def _detect_contamination_at(self, x: float, y: float):
-        """Detect contamination zone at click position."""
-        if self._nhdf_data is None:
-            return
-
-        # Get frame data (use final frame)
-        data = self._nhdf_data.data
-        if len(data.shape) == 2:
-            frame_data = data
-        elif len(data.shape) >= 3:
-            if data.shape[2] <= 4:
-                frame_data = data
-            else:
-                frame_data = data[self._final_frame_index] if self._final_frame_index < data.shape[0] else data[0]
-        else:
-            return
-
-        # Detect region with higher tolerance for contamination
-        result = self._detector.detect_region(frame_data, x, y, threshold_tolerance=0.25)
-        if result is None:
-            return
-
-        vertices = self._detector.finalize_polygon(result, original_shape=frame_data.shape[:2])
-
-        # Convert to nm coordinates
-        vertices_nm = [(v[0] * self._calibration_scale, v[1] * self._calibration_scale)
-                       for v in vertices]
-        self._contamination_zones.append(vertices_nm)
-
-        # Show on both previews
-        self._initial_preview.add_polygon(vertices, color='red', label=f"C{len(self._contamination_zones)}")
-        self._final_preview.add_polygon(vertices, color='red', label=f"C{len(self._contamination_zones)}")
-
-        self._contam_count_label.setText(f"Zones: {len(self._contamination_zones)}")
+        """Detect contamination zone at click position using pipette with preview dialog."""
+        # Reuse the void detection flow with 'contamination' target
+        self._detect_void_at(x, y, self._final_frame_index, 'contamination')
 
     def _clear_initial_voids(self):
         """Clear all initial voids."""
