@@ -355,6 +355,11 @@ class WorkspaceMainWindow(QMainWindow):
         hole_pairing_action.triggered.connect(self._on_show_hole_pairing)
         tools_menu.addAction(hole_pairing_action)
 
+        speckmann_action = QAction("&Speckmann Analysis...", self)
+        speckmann_action.setShortcut(QKeySequence("Ctrl+Shift+K"))
+        speckmann_action.triggered.connect(self._on_show_speckmann_analysis)
+        tools_menu.addAction(speckmann_action)
+
         # Export menu
         export_menu = menubar.addMenu("&Export")
 
@@ -1744,6 +1749,12 @@ class WorkspaceMainWindow(QMainWindow):
         self._hole_pairing_panel.set_workspace(self._workspace)
         self._hole_pairing_panel.set_main_window(self)
         self._hole_pairing_panel._refresh_panel_list()
+
+    def _on_show_speckmann_analysis(self):
+        """Show the Speckmann thermal diffusion analysis dialog."""
+        from .speckmann_analysis_dialog import SpeckmannAnalysisDialog
+        dialog = SpeckmannAnalysisDialog(workspace=self._workspace, parent=self)
+        dialog.exec()
 
     def _on_about(self):
         """Show about dialog."""
