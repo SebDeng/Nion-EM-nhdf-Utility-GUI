@@ -117,6 +117,7 @@ class WorkspaceMainWindow(QMainWindow):
         self._analysis_toolbar.unit_changed.connect(self._on_unit_changed)
         self._analysis_toolbar.export_requested.connect(self._on_export_plot)
         self._analysis_toolbar.show_histogram.connect(self._on_show_histogram)
+        self._analysis_toolbar.show_frame_statistics.connect(self._on_show_frame_statistics)
         central_layout.addWidget(self._analysis_toolbar)
 
         # Create mode manager with tabbed workspace/processing
@@ -1011,6 +1012,85 @@ class WorkspaceMainWindow(QMainWindow):
             if isinstance(panel, WorkspaceDisplayPanel):
                 self._update_histogram_for_panel(panel)
 
+    def _on_show_frame_statistics(self):
+        """Handle show frame statistics button click."""
+        # Show analysis dock and switch to frame statistics tab
+        self._analysis_dock.setVisible(True)
+        self._analysis_panel.show_frame_statistics_tab()
+
+        # Connect widget signals for ROI control
+        frame_stats_widget = self._analysis_panel.get_frame_statistics_widget()
+        # Disconnect first to avoid duplicate connections
+        try:
+            frame_stats_widget.roi_mode_requested.disconnect(self._on_frame_stats_roi_requested)
+            frame_stats_widget.roi_clear_requested.disconnect(self._on_frame_stats_roi_clear)
+            frame_stats_widget.export_requested.disconnect(self._on_frame_stats_export)
+        except (TypeError, RuntimeError):
+            pass  # Not connected yet
+        frame_stats_widget.roi_mode_requested.connect(self._on_frame_stats_roi_requested)
+        frame_stats_widget.roi_clear_requested.connect(self._on_frame_stats_roi_clear)
+        frame_stats_widget.export_requested.connect(self._on_frame_stats_export)
+
+        # Update statistics for current panel
+        if self._workspace and self._workspace.selected_panel:
+            panel = self._workspace.selected_panel
+            if isinstance(panel, WorkspaceDisplayPanel):
+                self._update_frame_statistics_for_panel(panel)
+
+    def _on_frame_stats_roi_requested(self):
+        """Handle ROI creation request from frame statistics widget."""
+        if self._workspace and self._workspace.selected_panel:
+            panel = self._workspace.selected_panel
+            if isinstance(panel, WorkspaceDisplayPanel):
+                if hasattr(panel, 'display_panel') and panel.display_panel:
+                    display = panel.display_panel
+                    display.create_frame_statistics_roi()
+                    # Connect ROI update signal
+                    try:
+                        display.frame_stats_roi_changed.disconnect(self._on_frame_stats_roi_changed)
+                    except (TypeError, RuntimeError):
+                        pass
+                    display.frame_stats_roi_changed.connect(self._on_frame_stats_roi_changed)
+
+    def _on_frame_stats_roi_clear(self):
+        """Handle ROI clear request from frame statistics widget."""
+        if self._workspace and self._workspace.selected_panel:
+            panel = self._workspace.selected_panel
+            if isinstance(panel, WorkspaceDisplayPanel):
+                if hasattr(panel, 'display_panel') and panel.display_panel:
+                    panel.display_panel.clear_frame_statistics_roi()
+                    # Update statistics without ROI
+                    self._update_frame_statistics_for_panel(panel)
+
+    def _on_frame_stats_roi_changed(self, roi_data):
+        """Handle ROI change - recompute statistics."""
+        if self._workspace and self._workspace.selected_panel:
+            panel = self._workspace.selected_panel
+            if isinstance(panel, WorkspaceDisplayPanel):
+                self._update_frame_statistics_for_panel(panel)
+
+    def _on_frame_stats_export(self):
+        """Handle frame statistics export request."""
+        from src.gui.frame_statistics_export_dialog import FrameStatisticsExportDialog
+
+        frame_stats_widget = self._analysis_panel.get_frame_statistics_widget()
+        stats_data = frame_stats_widget.get_current_data()
+
+        if stats_data is None:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "No Data", "No frame statistics data to export.")
+            return
+
+        # Add file name if available
+        if self._workspace and self._workspace.selected_panel:
+            panel = self._workspace.selected_panel
+            if isinstance(panel, WorkspaceDisplayPanel) and panel.current_file_path:
+                import os
+                stats_data['file_name'] = os.path.basename(panel.current_file_path)
+
+        dialog = FrameStatisticsExportDialog(stats_data, self)
+        dialog.exec()
+
     def _on_create_measurement(self):
         """Handle create measurement button click."""
         # Get the selected panel and create a measurement on it
@@ -1408,6 +1488,98 @@ class WorkspaceMainWindow(QMainWindow):
 
             # Update the histogram
             self._analysis_panel.update_histogram(frame_data, display_range)
+
+    def _update_frame_statistics_for_panel(self, panel: WorkspaceDisplayPanel):
+        """Update the frame statistics display for the given panel."""
+        import numpy as np
+
+        if not hasattr(self, '_analysis_panel'):
+            return
+
+        if not isinstance(panel, WorkspaceDisplayPanel) or not panel.current_data:
+            self._analysis_panel._frame_statistics_widget.clear_statistics()
+            return
+
+        data = panel.current_data
+        num_frames = data.num_frames
+
+        if num_frames < 2:
+            # Single frame - show message in widget
+            self._analysis_panel._frame_statistics_widget.clear_statistics()
+            return
+
+        # Get ROI bounds if available
+        roi_bounds = None
+        display_panel = panel.display_panel if hasattr(panel, 'display_panel') else None
+        if display_panel:
+            roi_bounds = display_panel.get_frame_statistics_roi_bounds()
+
+        # Compute statistics for all frames
+        stats_data = self._compute_frame_statistics(data, roi_bounds)
+
+        # Add metadata
+        if panel.current_file_path:
+            import os
+            stats_data['file_name'] = os.path.basename(panel.current_file_path)
+
+        # Update widget
+        self._analysis_panel.update_frame_statistics(stats_data)
+
+    def _compute_frame_statistics(self, data, roi_bounds=None):
+        """
+        Compute statistics for all frames in the data.
+
+        Args:
+            data: NHDFData object
+            roi_bounds: Optional tuple (x, y, w, h) for ROI
+
+        Returns:
+            Dictionary with frame statistics
+        """
+        import numpy as np
+
+        num_frames = data.num_frames
+
+        means = np.zeros(num_frames)
+        sums = np.zeros(num_frames)
+        stds = np.zeros(num_frames)
+        mins = np.zeros(num_frames)
+        maxs = np.zeros(num_frames)
+
+        for i in range(num_frames):
+            frame = data.get_frame(i)
+
+            # Apply ROI if present
+            if roi_bounds is not None:
+                x, y, w, h = roi_bounds
+                x, y, w, h = int(x), int(y), int(w), int(h)
+                # Clip to frame bounds
+                x = max(0, x)
+                y = max(0, y)
+                if x + w > frame.shape[1]:
+                    w = frame.shape[1] - x
+                if y + h > frame.shape[0]:
+                    h = frame.shape[0] - y
+                if w > 0 and h > 0:
+                    frame = frame[y:y+h, x:x+w]
+
+            # Compute statistics (handle NaN values)
+            means[i] = np.nanmean(frame)
+            sums[i] = np.nansum(frame)
+            stds[i] = np.nanstd(frame)
+            mins[i] = np.nanmin(frame)
+            maxs[i] = np.nanmax(frame)
+
+        return {
+            'frame_numbers': np.arange(num_frames),
+            'mean': means,
+            'sum': sums,
+            'std': stds,
+            'min': mins,
+            'max': maxs,
+            'roi_bounds': roi_bounds,
+            'total_frames': num_frames
+        }
 
     def _update_line_profile_for_panel(self, panel: WorkspaceDisplayPanel):
         """Update the line profile display for the given panel."""

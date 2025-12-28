@@ -6,7 +6,6 @@
   <img src="assets/AE_Full_Icon.png" alt="AtomE Full Icon" width="300"/>
 </div>
 
-
 Author: Sebastian (Yusong, or Seb) Deng, at AtomE Lab (PI: Dr. Cong Su) at Yale University, Departmnet of Materials Science.
 
 This project started in order to help Seb Deng (who is me) to solve some problems encountered in his day to day research when interacting with Nion (now Bruker AXS) electron microscopes. Nion utilized nhdf files to store enormous meta data in the folder. However, the common software we use on daily basis, like Nion Swift, ImageJ fails to open the images (at least I didn't find a way to). During one imaging Session, Ben (Nion Microscopist) sent me a script developed by Chris Meyer @cmeyer, cmeyer/read_nhdf.py https://gist.github.com/cmeyer/84ca01974369d9b2841ddf8f0ff212d2, in order to read the file using python scripts. Naturally, I want to expand the script from a code to a GUI for easy and quick examine of the data. Later on we expand on it a little to give it some quick data examine capability and data processing capability (to be further developed). I hope this could be helpful to our electron microscopists friends who have little experience in coding to fully utilize the potential of Nion nhdf file formats. 
@@ -18,6 +17,24 @@ The GUI is equiped with a modern graphical user interface for visualizing and ma
 Please send any bug or issue you noticed to sebastian.deng@yale.edu and I will try to address the issue to the best of my capabilities. Please forgive me that I am not a professional software engineer. Please also let me know if you want to contribute (actual code or ideas). 
 
 **Have FUN!!!**
+
+## Screenshots
+
+### Workspace Overview
+The main interface features a Nion Swift-style free-tiling workspace where you can open multiple images simultaneously, add rich text memos, view metadata, and perform analysis with line profiles and histograms.
+
+![UI Overview](assets/UI%20overview.png)
+
+### One-Click Void Detection
+The pipette tool allows automatic detection of dark regions (voids, defects) in images. Simply click on a dark area and adjust the threshold to extract polygons for area measurement.
+
+![Pipette Void Detection](assets/One%20click%20extraction%20of%20void.png)
+
+### Polygon Area Measurement & Frame Statistics
+Draw polygons to measure areas with automatic total summation. The Frame Statistics tool analyzes intensity changes across all frames in a sequence, with optional ROI selection.
+
+![Polygon Measurement](assets/Polygon-area-measurement.png)
+
 ## Features
 
 - **Multi-Format Support**: Read Nion nhdf, Gatan DM3/DM4, and standard images (PNG, JPG, TIFF, BMP)
@@ -35,8 +52,10 @@ Please send any bug or issue you noticed to sebastian.deng@yale.edu and I will t
 - **Analysis Tools**:
   - Line profile with width averaging and reference markers
   - Histogram with statistics (min, max, mean, median, std)
+  - Frame statistics: Mean/Sum/Std/Min/Max per frame across sequences with ROI support
   - Distance measurements with draggable labels
   - Polygon area measurement with automatic summation
+  - Pipette auto-detection: One-click extraction of dark regions (voids, defects)
 - **Calculators**:
   - Electron Dose Calculator (e⁻/nm², flux, counts per frame)
   - 2D Material Atom Calculator (MoS2, WS2, Graphene, etc.)
@@ -306,13 +325,15 @@ Nion-EM-nhdf-Utility-GUI/
 │   │   ├── metadata_panel.py       # Metadata browser
 │   │   ├── export_dialog.py        # Export configuration dialog
 │   │   ├── histogram_widget.py     # Histogram display
+│   │   ├── frame_statistics_*.py   # Frame statistics analysis tools
 │   │   ├── line_profile_*.py       # Line profile tools
 │   │   ├── measurement_overlay.py  # Distance measurement tool
+│   │   ├── pipette_detector.py     # Auto-detection of dark regions
 │   │   ├── memo_pad.py             # Rich text notes
 │   │   ├── dose_calculator.py      # Electron dose calculator
 │   │   ├── material_calculator.py  # 2D material atom calculator
 │   │   ├── preview_mode/           # Preview mode components
-│   │   │   ├── analysis_panel.py   # Analysis results (line profile, histogram)
+│   │   │   ├── analysis_panel.py   # Analysis results (line profile, histogram, frame stats)
 │   │   │   └── analysis_toolbar.py # Analysis tools toolbar
 │   │   └── processing_mode/        # Processing mode components
 │   │       ├── processing_mode_widget_v3.py # Main processing UI

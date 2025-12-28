@@ -8,6 +8,7 @@ from typing import Optional, Dict, Any, List
 import numpy as np
 from src.gui.line_profile_widget import LineProfileWidget
 from src.gui.histogram_widget import HistogramWidget
+from src.gui.frame_statistics_widget import FrameStatisticsWidget
 
 
 class AnalysisResultsPanel(QWidget):
@@ -38,12 +39,17 @@ class AnalysisResultsPanel(QWidget):
         self._histogram_widget = HistogramWidget()
         self._tab_widget.addTab(self._histogram_widget, "Histogram")
 
+        # Frame statistics widget
+        self._frame_statistics_widget = FrameStatisticsWidget()
+        self._tab_widget.addTab(self._frame_statistics_widget, "Frame Statistics")
+
         layout.addWidget(self._tab_widget)
 
     def clear_all(self):
         """Clear all analysis results."""
         self._line_profile_widget.clear_plot()
         self._histogram_widget.clear_histogram()
+        self._frame_statistics_widget.clear_statistics()
 
     def add_line_profile(self, profile_id: str, data: Dict[str, Any]):
         """
@@ -87,6 +93,23 @@ class AnalysisResultsPanel(QWidget):
         """Switch to the line profile tab."""
         self._tab_widget.setCurrentWidget(self._line_profile_widget)
 
+    def update_frame_statistics(self, stats_data: Dict[str, Any]):
+        """
+        Update the frame statistics with new data.
+
+        Args:
+            stats_data: Dictionary with frame statistics
+        """
+        self._frame_statistics_widget.update_statistics(stats_data)
+
+    def show_frame_statistics_tab(self):
+        """Switch to the frame statistics tab."""
+        self._tab_widget.setCurrentWidget(self._frame_statistics_widget)
+
+    def get_frame_statistics_widget(self) -> FrameStatisticsWidget:
+        """Get the frame statistics widget for signal connections."""
+        return self._frame_statistics_widget
+
     def set_theme(self, is_dark: bool):
         """Update the panel theme."""
         self._is_dark_mode = is_dark
@@ -94,6 +117,7 @@ class AnalysisResultsPanel(QWidget):
         # Also update child widget themes
         self._line_profile_widget.set_theme(is_dark)
         self._histogram_widget.set_theme(is_dark)
+        self._frame_statistics_widget.set_theme(is_dark)
 
     def _apply_theme(self):
         """Apply the current theme."""

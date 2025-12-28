@@ -20,6 +20,7 @@ from matplotlib import colormaps as mpl_colormaps
 from src.core.nhdf_reader import NHDFData
 from src.gui.line_profile_overlay import LineProfileOverlay, LineProfileData
 from src.gui.measurement_overlay import MeasurementOverlay, MeasurementData
+from src.gui.frame_statistics_overlay import FrameStatisticsOverlay, FrameROIData
 from src.gui.memo_pad import MemoPadManager
 from src.gui.dose_label import DoseLabelManager
 from src.gui.material_label import MaterialLabelManager
@@ -648,6 +649,7 @@ class DisplayPanel(QWidget):
     frame_changed = Signal(int)
     line_profile_created = Signal(LineProfileData)  # Emitted when a line profile is created
     measurement_created = Signal(MeasurementData)  # Emitted when a measurement is created/updated
+    frame_stats_roi_changed = Signal(FrameROIData)  # Emitted when frame statistics ROI is created/updated
 
     def __init__(self, parent=None, show_controls=True):
         super().__init__(parent)
@@ -699,6 +701,11 @@ class DisplayPanel(QWidget):
         # Measurement overlay
         self._measurement_overlay = MeasurementOverlay(self._plot_item, self._image_item)
         self._measurement_overlay.measurement_created.connect(self.measurement_created.emit)
+
+        # Frame statistics ROI overlay
+        self._frame_stats_overlay = FrameStatisticsOverlay(self._plot_item, self._image_item)
+        self._frame_stats_overlay.roi_created.connect(self.frame_stats_roi_changed.emit)
+        self._frame_stats_overlay.roi_updated.connect(self.frame_stats_roi_changed.emit)
 
         # Memo pad manager (memos float over the graphics widget)
         self._memo_manager = MemoPadManager(self._graphics_widget)
@@ -1344,6 +1351,35 @@ class DisplayPanel(QWidget):
             self._set_measurement_calibration()
             # Restore the measurements
             self._measurement_overlay.restore_measurements(measurements)
+
+    # --- Frame Statistics ROI Methods ---
+
+    def create_frame_statistics_roi(self):
+        """Create a rectangle ROI for frame statistics analysis."""
+        if self._frame_stats_overlay:
+            self._frame_stats_overlay.create_default_roi()
+
+    def clear_frame_statistics_roi(self):
+        """Clear the frame statistics ROI."""
+        if self._frame_stats_overlay:
+            self._frame_stats_overlay.clear_roi()
+
+    def get_frame_statistics_roi_bounds(self):
+        """
+        Get the current frame statistics ROI bounds.
+
+        Returns:
+            Tuple of (x, y, width, height) in pixels, or None if no ROI.
+        """
+        if self._frame_stats_overlay:
+            return self._frame_stats_overlay.get_roi_bounds()
+        return None
+
+    def has_frame_statistics_roi(self) -> bool:
+        """Check if there is an active frame statistics ROI."""
+        if self._frame_stats_overlay:
+            return self._frame_stats_overlay.has_active_roi()
+        return False
 
     # --- Context Menu ---
 

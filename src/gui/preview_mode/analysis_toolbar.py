@@ -20,6 +20,7 @@ class AnalysisToolBar(QToolBar):
     unit_changed = Signal(str)  # Emitted when x-axis unit is changed
     export_requested = Signal()  # Emitted when export button is clicked
     show_histogram = Signal()  # Emitted when show histogram is clicked
+    show_frame_statistics = Signal()  # Emitted when frame statistics is clicked
 
     def __init__(self, parent=None):
         super().__init__("Analysis Tools", parent)
@@ -92,6 +93,15 @@ class AnalysisToolBar(QToolBar):
         self._histogram_action.triggered.connect(self._on_show_histogram)
         self.addAction(self._histogram_action)
 
+        self.addSeparator()
+
+        # Frame Statistics button
+        self._frame_stats_action = QAction("Frame Statistics", self)
+        self._frame_stats_action.setToolTip("Show frame statistics over time (F)")
+        self._frame_stats_action.setShortcut("F")
+        self._frame_stats_action.triggered.connect(self._on_show_frame_statistics)
+        self.addAction(self._frame_stats_action)
+
     def _on_create_line_profile(self):
         """Handle create line profile button click."""
         self.create_line_profile.emit()
@@ -115,6 +125,10 @@ class AnalysisToolBar(QToolBar):
     def _on_show_histogram(self):
         """Handle show histogram button click."""
         self.show_histogram.emit()
+
+    def _on_show_frame_statistics(self):
+        """Handle frame statistics button click."""
+        self.show_frame_statistics.emit()
 
     def set_theme(self, is_dark: bool):
         """Update toolbar theme."""
