@@ -92,7 +92,7 @@ class DatasetImportDialog(QDialog):
 
         self._session_path = ""
         self._session_path_edit = QLineEdit()
-        self._session_path_edit.setPlaceholderText("Link to workspace session file (.nses)...")
+        self._session_path_edit.setPlaceholderText("Link to workspace session file (.json)...")
         self._session_path_edit.setReadOnly(True)
         session_layout.addWidget(self._session_path_edit)
 
@@ -164,7 +164,7 @@ class DatasetImportDialog(QDialog):
             self,
             "Select Session File",
             "",
-            "Session Files (*.nses);;All Files (*)"
+            "Session Files (*.json);;All Files (*)"
         )
 
         if path:

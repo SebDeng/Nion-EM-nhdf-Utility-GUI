@@ -125,7 +125,7 @@ class Dataset:
     color: str = "#4CAF50"                 # Display color in plots
     symbol: str = "o"                      # Plot symbol: o, s, t, d (circle, square, triangle, diamond)
     visible: bool = True                   # Show in plot
-    session_path: str = ""                 # Path to source workspace session (.nses file)
+    session_path: str = ""                 # Path to source workspace session (.json file)
     data_points: List[DataPoint] = field(default_factory=list)
 
     @property
