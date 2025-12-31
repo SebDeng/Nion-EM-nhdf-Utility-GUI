@@ -33,6 +33,7 @@ from src.gui.measurement_toolbar import MeasurementToolBar
 from src.gui.dose_calculator import DoseCalculatorDialog
 from src.gui.material_calculator import MaterialCalculatorDialog
 from src.gui.workspace_tab_bar import WorkspaceTabBar
+from src.gui.analysis_platform import AnalysisPlatformWindow
 
 
 class WorkspaceMainWindow(QMainWindow):
@@ -360,6 +361,13 @@ class WorkspaceMainWindow(QMainWindow):
         speckmann_action.setShortcut(QKeySequence("Ctrl+Shift+K"))
         speckmann_action.triggered.connect(self._on_show_speckmann_analysis)
         tools_menu.addAction(speckmann_action)
+
+        tools_menu.addSeparator()
+
+        analysis_platform_action = QAction("&Analysis Platform...", self)
+        analysis_platform_action.setShortcut(QKeySequence("Ctrl+Shift+A"))
+        analysis_platform_action.triggered.connect(self._on_show_analysis_platform)
+        tools_menu.addAction(analysis_platform_action)
 
         # Export menu
         export_menu = menubar.addMenu("&Export")
@@ -1927,6 +1935,16 @@ class WorkspaceMainWindow(QMainWindow):
         from .speckmann_analysis_dialog import SpeckmannAnalysisDialog
         dialog = SpeckmannAnalysisDialog(workspace=self._workspace, parent=self)
         dialog.exec()
+
+    def _on_show_analysis_platform(self):
+        """Show the hole pairing analysis platform window."""
+        # Create and show the analysis platform as a standalone window
+        # Store reference to prevent garbage collection
+        if not hasattr(self, '_analysis_platform_window') or self._analysis_platform_window is None:
+            self._analysis_platform_window = AnalysisPlatformWindow(parent=None)
+        self._analysis_platform_window.show()
+        self._analysis_platform_window.raise_()
+        self._analysis_platform_window.activateWindow()
 
     def _on_about(self):
         """Show about dialog."""
