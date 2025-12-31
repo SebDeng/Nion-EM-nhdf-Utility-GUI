@@ -27,6 +27,7 @@ from src.gui.hole_pairing_data import (
     calculate_proper_centroid, calculate_polygon_area,
     calculate_perpendicular_width
 )
+from src.gui.heatmap_visualization_dialog import HeatMapVisualizationDialog
 
 
 class HolePairingPanel(QWidget):
@@ -309,6 +310,17 @@ class HolePairingPanel(QWidget):
 
         content_layout.addWidget(small_holes_group)
 
+        # --- Visualization Button ---
+        viz_row = QHBoxLayout()
+        self._show_heatmap_btn = QPushButton("Show ΔA Heat Map")
+        self._show_heatmap_btn.setStyleSheet("font-weight: bold;")
+        self._show_heatmap_btn.setToolTip(
+            "Open visualization dialog showing area change (ΔA) as a heat map.\n"
+            "Blue = shrinking, Red = growing"
+        )
+        viz_row.addWidget(self._show_heatmap_btn)
+        content_layout.addLayout(viz_row)
+
         # --- Import/Export Buttons ---
         export_row = QHBoxLayout()
         self._import_btn = QPushButton("Import CSV...")
@@ -376,6 +388,7 @@ class HolePairingPanel(QWidget):
         self._import_btn.clicked.connect(self._import_csv)
         self._export_btn.clicked.connect(self._export_csv)
         self._clear_btn.clicked.connect(self._clear_all)
+        self._show_heatmap_btn.clicked.connect(self._show_heatmap_dialog)
 
     def set_workspace(self, workspace):
         """Set reference to the workspace widget."""
@@ -1762,6 +1775,32 @@ class HolePairingPanel(QWidget):
             self._update_absorbed_dropdown()
             self._update_stats()
             self._update_unassigned_lists()
+
+    def _show_heatmap_dialog(self):
+        """Open the ΔA heat map visualization dialog."""
+        # Check if we have confirmed pairings
+        confirmed = self._session.get_confirmed_pairings()
+        if not confirmed:
+            QMessageBox.warning(
+                self,
+                "No Confirmed Pairings",
+                "Please confirm at least one sink pairing before generating the heat map.\n\n"
+                "The heat map visualizes area change (ΔA) for confirmed pairings."
+            )
+            return
+
+        # Check if panels are selected
+        if not self._session.before_panel_id or not self._session.after_panel_id:
+            QMessageBox.warning(
+                self,
+                "No Panels Selected",
+                "Please select both Before and After panels."
+            )
+            return
+
+        # Open the dialog
+        dialog = HeatMapVisualizationDialog(self._session, self._workspace, self)
+        dialog.exec()
 
     def set_theme(self, is_dark: bool):
         """Update theme for the panel."""
