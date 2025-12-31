@@ -212,9 +212,9 @@ class InteractivePlotWidget(QWidget):
                 self._plot_widget.addItem(fit_line)
                 self._fit_lines[dataset.dataset_id] = fit_line
 
-                # Statistics
+                # Statistics - show slope (m), intercept (b), and R²
                 r_squared = r_value ** 2
-                stats_parts.append(f"{dataset.name}: n={len(x_data)}, m={slope:.2f}, R²={r_squared:.3f}")
+                stats_parts.append(f"{dataset.name}: n={len(x_data)}, m={slope:.2f}, b={intercept:.2f}, R²={r_squared:.3f}")
 
         # Update fit line visibility
         self._update_fit_visibility()

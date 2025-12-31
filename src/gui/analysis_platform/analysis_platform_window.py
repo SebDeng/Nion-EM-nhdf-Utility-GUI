@@ -11,8 +11,8 @@ from PySide6.QtWidgets import (
     QMenuBar, QMenu, QToolBar, QStatusBar, QDoubleSpinBox,
     QFormLayout, QFrame
 )
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction, QColor, QIcon
+from PySide6.QtCore import Qt, Signal, QSize
+from PySide6.QtGui import QAction, QColor, QIcon, QPixmap, QPainter, QBrush, QPen
 
 import os
 from typing import Optional
@@ -23,20 +23,69 @@ from .interactive_plot_widget import InteractivePlotWidget
 from .data_point_info_panel import DataPointInfoPanel
 
 
+def create_color_icon(color_str: str, symbol: str = 'o', size: int = 16) -> QIcon:
+    """Create a colored icon with the dataset symbol."""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+
+    color = QColor(color_str)
+    painter.setBrush(QBrush(color))
+    painter.setPen(QPen(color.darker(120), 1))
+
+    center = size // 2
+    radius = size // 2 - 2
+
+    if symbol == 'o':  # circle
+        painter.drawEllipse(center - radius, center - radius, radius * 2, radius * 2)
+    elif symbol == 's':  # square
+        painter.drawRect(center - radius, center - radius, radius * 2, radius * 2)
+    elif symbol == 't':  # triangle
+        from PySide6.QtGui import QPolygon
+        from PySide6.QtCore import QPoint
+        points = [
+            QPoint(center, center - radius),
+            QPoint(center - radius, center + radius),
+            QPoint(center + radius, center + radius)
+        ]
+        painter.drawPolygon(QPolygon(points))
+    elif symbol == 'd':  # diamond
+        from PySide6.QtGui import QPolygon
+        from PySide6.QtCore import QPoint
+        points = [
+            QPoint(center, center - radius),
+            QPoint(center + radius, center),
+            QPoint(center, center + radius),
+            QPoint(center - radius, center)
+        ]
+        painter.drawPolygon(QPolygon(points))
+    else:  # default circle
+        painter.drawEllipse(center - radius, center - radius, radius * 2, radius * 2)
+
+    painter.end()
+    return QIcon(pixmap)
+
+
 class DatasetListItem(QListWidgetItem):
     """List item for a dataset with visibility checkbox."""
 
     def __init__(self, dataset: Dataset, parent=None):
         super().__init__(parent)
         self.dataset = dataset
-        self._update_text()
+        self._update_display()
 
-    def _update_text(self):
-        """Update the display text."""
+    def _update_display(self):
+        """Update the display text and icon."""
         visibility = "●" if self.dataset.visible else "○"
         self.setText(f"{visibility} {self.dataset.name} (n={self.dataset.count})")
 
-        # Set color
+        # Set colored icon with symbol shape
+        icon = create_color_icon(self.dataset.color, self.dataset.symbol, 16)
+        self.setIcon(icon)
+
+        # Also set text color for better visibility
         color = QColor(self.dataset.color)
         self.setForeground(color)
 
@@ -179,6 +228,12 @@ class AnalysisPlatformWindow(QMainWindow):
 
         datasets_layout.addLayout(dataset_btn_layout)
 
+        # Merge button
+        self._merge_btn = QPushButton("Merge by Current")
+        self._merge_btn.setToolTip("Merge datasets with same light intensity into one for fitting")
+        self._merge_btn.clicked.connect(self._merge_datasets)
+        datasets_layout.addWidget(self._merge_btn)
+
         left_layout.addWidget(datasets_group)
 
         # Filters Group
@@ -248,6 +303,7 @@ class AnalysisPlatformWindow(QMainWindow):
         self._manager.project_changed.connect(self._update_window_title)
         self._plot_widget.point_clicked.connect(self._on_point_clicked)
         self._plot_widget.point_hovered.connect(self._on_point_hovered)
+        self._info_panel.show_in_session.connect(self._on_show_in_session)
 
     def _update_window_title(self):
         """Update window title with project name."""
@@ -341,7 +397,8 @@ class AnalysisPlatformWindow(QMainWindow):
                 name=params['name'],
                 light_intensity_mA=params['light_intensity_mA'],
                 color=params['color'],
-                symbol=params['symbol']
+                symbol=params['symbol'],
+                session_path=params.get('session_path', '')
             )
 
             if dataset:
@@ -388,6 +445,42 @@ class AnalysisPlatformWindow(QMainWindow):
 
         if reply == QMessageBox.Yes:
             self._manager.remove_dataset(dataset.dataset_id)
+
+    def _merge_datasets(self):
+        """Merge datasets with the same light intensity."""
+        # Check if there are datasets to merge
+        groups = self._manager.get_datasets_by_intensity()
+        mergeable = {k: v for k, v in groups.items() if len(v) > 1}
+
+        if not mergeable:
+            QMessageBox.information(
+                self, "No Datasets to Merge",
+                "There are no datasets with the same light intensity to merge.\n"
+                "You need at least 2 datasets with the same current value."
+            )
+            return
+
+        # Show confirmation
+        msg = "This will create merged datasets for the following currents:\n\n"
+        for intensity, datasets in mergeable.items():
+            names = [ds.name for ds in datasets]
+            msg += f"• {intensity:.0f} mA: {', '.join(names)}\n"
+        msg += "\nThe original datasets will be kept. Continue?"
+
+        reply = QMessageBox.question(
+            self, "Merge Datasets",
+            msg,
+            QMessageBox.Yes | QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            merged = self._manager.merge_datasets_by_intensity()
+            if merged:
+                self._statusbar.showMessage(
+                    f"Created {len(merged)} merged dataset(s)"
+                )
+            else:
+                QMessageBox.warning(self, "Error", "Failed to merge datasets.")
 
     def _on_dataset_double_clicked(self, item):
         """Handle double-click on dataset to toggle visibility."""
@@ -446,6 +539,58 @@ class AnalysisPlatformWindow(QMainWindow):
             total_points = sum(ds.count for ds in self._manager.datasets)
             self._statusbar.showMessage(
                 f"{len(self._manager.datasets)} datasets, {total_points} total points"
+            )
+
+    def _on_show_in_session(self, session_path: str, pairing_id: str):
+        """Handle request to show point in original session."""
+        import os
+
+        if not os.path.exists(session_path):
+            QMessageBox.warning(
+                self, "Session Not Found",
+                f"The session file could not be found:\n{session_path}\n\n"
+                "The file may have been moved or deleted."
+            )
+            return
+
+        # Find the main workspace window
+        from PySide6.QtWidgets import QApplication
+        main_window = None
+        for widget in QApplication.topLevelWidgets():
+            if widget.__class__.__name__ == 'WorkspaceMainWindow':
+                main_window = widget
+                break
+
+        if main_window:
+            # Ask user if they want to load the session
+            reply = QMessageBox.question(
+                self, "Open Session",
+                f"Open the workspace session?\n\n"
+                f"Session: {os.path.basename(session_path)}\n"
+                f"Pairing ID: {pairing_id}\n\n"
+                f"Note: This will load the session in the main workspace.\n"
+                f"You can then use the Hole Pairing panel to find this hole.",
+                QMessageBox.Yes | QMessageBox.No
+            )
+
+            if reply == QMessageBox.Yes:
+                try:
+                    # Load the session
+                    if hasattr(main_window, '_session_manager'):
+                        main_window._session_manager.load_session(session_path)
+                        self._statusbar.showMessage(f"Loaded session. Look for pairing: {pairing_id}")
+                    else:
+                        QMessageBox.warning(self, "Error", "Could not access session manager.")
+                except Exception as e:
+                    QMessageBox.warning(self, "Error", f"Failed to load session: {e}")
+        else:
+            # No main window found, just show info
+            QMessageBox.information(
+                self, "Session Information",
+                f"Session file: {session_path}\n"
+                f"Pairing ID: {pairing_id}\n\n"
+                "Open the main application window and load this session\n"
+                "to view the original hole pairing data."
             )
 
     def _export_plot(self):

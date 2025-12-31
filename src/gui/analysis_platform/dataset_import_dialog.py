@@ -86,6 +86,22 @@ class DatasetImportDialog(QDialog):
 
         layout.addWidget(info_group)
 
+        # Session Link Group (for linking back to original data)
+        session_group = QGroupBox("Source Session (Optional)")
+        session_layout = QHBoxLayout(session_group)
+
+        self._session_path = ""
+        self._session_path_edit = QLineEdit()
+        self._session_path_edit.setPlaceholderText("Link to workspace session file (.nses)...")
+        self._session_path_edit.setReadOnly(True)
+        session_layout.addWidget(self._session_path_edit)
+
+        self._session_browse_btn = QPushButton("Browse...")
+        self._session_browse_btn.clicked.connect(self._browse_session)
+        session_layout.addWidget(self._session_browse_btn)
+
+        layout.addWidget(session_group)
+
         # Preview Group
         preview_group = QGroupBox("Preview")
         preview_layout = QVBoxLayout(preview_group)
@@ -141,6 +157,19 @@ class DatasetImportDialog(QDialog):
             self._preview_file(path)
 
             self._import_btn.setEnabled(True)
+
+    def _browse_session(self):
+        """Browse for session file."""
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Session File",
+            "",
+            "Session Files (*.nses);;All Files (*)"
+        )
+
+        if path:
+            self._session_path = path
+            self._session_path_edit.setText(path)
 
     def _preview_file(self, path: str):
         """Preview CSV file contents."""
@@ -198,4 +227,5 @@ class DatasetImportDialog(QDialog):
             'light_intensity_mA': self._intensity_spin.value(),
             'color': self._color_combo.currentData(),
             'symbol': self._symbol_combo.currentData(),
+            'session_path': self._session_path,
         }

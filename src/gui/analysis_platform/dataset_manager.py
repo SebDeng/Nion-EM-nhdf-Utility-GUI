@@ -125,6 +125,7 @@ class Dataset:
     color: str = "#4CAF50"                 # Display color in plots
     symbol: str = "o"                      # Plot symbol: o, s, t, d (circle, square, triangle, diamond)
     visible: bool = True                   # Show in plot
+    session_path: str = ""                 # Path to source workspace session (.nses file)
     data_points: List[DataPoint] = field(default_factory=list)
 
     @property
@@ -143,6 +144,7 @@ class Dataset:
             'color': self.color,
             'symbol': self.symbol,
             'visible': self.visible,
+            'session_path': self.session_path,
             'data_points': [dp.to_dict() for dp in self.data_points],
         }
 
@@ -158,6 +160,7 @@ class Dataset:
             color=data.get('color', '#4CAF50'),
             symbol=data.get('symbol', 'o'),
             visible=data.get('visible', True),
+            session_path=data.get('session_path', ''),
         )
         dataset.data_points = [
             DataPoint.from_dict(dp) for dp in data.get('data_points', [])
@@ -305,7 +308,8 @@ class DatasetManager(QObject):
             return False
 
     def import_csv(self, csv_path: str, name: str, light_intensity_mA: float,
-                   color: str = None, symbol: str = None) -> Optional[Dataset]:
+                   color: str = None, symbol: str = None,
+                   session_path: str = "") -> Optional[Dataset]:
         """Import a CSV file as a new dataset."""
         if not self._project:
             self.new_project()
@@ -331,6 +335,7 @@ class DatasetManager(QObject):
             imported_at=datetime.now().isoformat(),
             color=color,
             symbol=symbol,
+            session_path=session_path,
             data_points=data_points,
         )
 
@@ -471,3 +476,85 @@ class DatasetManager(QObject):
         if dataset:
             dataset.symbol = symbol
             self.datasets_changed.emit()
+
+    def get_datasets_by_intensity(self) -> Dict[float, List[Dataset]]:
+        """Group datasets by light intensity."""
+        groups = {}
+        for ds in self.datasets:
+            intensity = ds.light_intensity_mA
+            if intensity not in groups:
+                groups[intensity] = []
+            groups[intensity].append(ds)
+        return groups
+
+    def merge_datasets_by_intensity(self) -> List[Dataset]:
+        """
+        Create merged datasets for each unique light intensity.
+        Returns list of new merged datasets.
+        Does not modify existing datasets - adds new merged ones.
+        """
+        if not self._project:
+            return []
+
+        groups = self.get_datasets_by_intensity()
+        merged_datasets = []
+
+        for intensity, datasets in groups.items():
+            # Skip if only one dataset with this intensity
+            if len(datasets) <= 1:
+                continue
+
+            # Create merged dataset
+            merged_id = str(uuid.uuid4())
+            merged_name = f"Merged {intensity:.0f}mA"
+
+            # Combine all data points
+            all_points = []
+            source_names = []
+            for ds in datasets:
+                for point in ds.data_points:
+                    # Create copy with new dataset_id but preserve original pairing_id
+                    new_point = DataPoint(
+                        pairing_id=point.pairing_id,
+                        dataset_id=merged_id,
+                        delta_area_nm2=point.delta_area_nm2,
+                        before_area_nm2=point.before_area_nm2,
+                        after_area_nm2=point.after_area_nm2,
+                        sqrt_A0_over_r=point.sqrt_A0_over_r,
+                        distance_to_center_nm=point.distance_to_center_nm,
+                        before_centroid_x=point.before_centroid_x,
+                        before_centroid_y=point.before_centroid_y,
+                        after_centroid_x=point.after_centroid_x,
+                        after_centroid_y=point.after_centroid_y,
+                        before_perp_width_nm=point.before_perp_width_nm,
+                        after_perp_width_nm=point.after_perp_width_nm,
+                        polygon_id_before=point.polygon_id_before,
+                        polygon_id_after=point.polygon_id_after,
+                    )
+                    all_points.append(new_point)
+                source_names.append(ds.name)
+
+            # Pick a distinct color and symbol for merged dataset
+            idx = len(self._project.datasets)
+            merged_color = DEFAULT_COLORS[(idx + 4) % len(DEFAULT_COLORS)]  # Offset to get different color
+            merged_symbol = 'star'  # Star symbol for merged datasets
+
+            merged_dataset = Dataset(
+                dataset_id=merged_id,
+                name=merged_name,
+                light_intensity_mA=intensity,
+                csv_path=f"Merged from: {', '.join(source_names)}",
+                imported_at=datetime.now().isoformat(),
+                color=merged_color,
+                symbol=merged_symbol,
+                data_points=all_points,
+            )
+
+            merged_datasets.append(merged_dataset)
+            self._project.datasets.append(merged_dataset)
+
+        if merged_datasets:
+            self._project.modified = datetime.now().isoformat()
+            self.datasets_changed.emit()
+
+        return merged_datasets
