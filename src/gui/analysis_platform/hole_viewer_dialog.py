@@ -275,13 +275,6 @@ class HoleViewerDialog(QDialog):
             )
             plot_widget.addItem(scatter)
 
-            # Zoom to centroid area with some padding
-            padding = 50  # pixels
-            plot_widget.setRange(
-                xRange=[cx - padding, cx + padding],
-                yRange=[cy - padding, cy + padding]
-            )
-
         # Update info label
         info_parts = [
             f"ID: {polygon_id}",
