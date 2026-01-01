@@ -160,7 +160,11 @@ class HoleViewerDialog(QDialog):
             return
 
         workspace = self._session_data.get('workspaces', [])[workspace_idx]
-        panels = workspace.get('panels', [])
+
+        # Panels are stored in a nested layout structure (splitters contain panels)
+        # We need to recursively search for them
+        layout = workspace.get('layout', {})
+        panels = self._extract_panels_from_layout(layout)
 
         for panel in panels:
             panel_id = panel.get('panel_id')
@@ -168,6 +172,23 @@ class HoleViewerDialog(QDialog):
                 self._before_panel_info = panel
             elif panel_id == self._after_panel_id:
                 self._after_panel_info = panel
+
+    def _extract_panels_from_layout(self, layout: Dict) -> List[Dict]:
+        """Recursively extract all panels from a layout structure."""
+        panels = []
+
+        if not layout:
+            return panels
+
+        layout_type = layout.get('type', '')
+
+        if layout_type in ('panel', 'display_panel'):
+            panels.append(layout)
+        elif layout_type == 'splitter':
+            for child in layout.get('children', []):
+                panels.extend(self._extract_panels_from_layout(child))
+
+        return panels
 
     def _display_hole(self, which: str, plot_widget: pg.PlotWidget, info_label: QLabel):
         """Display the hole in the plot widget."""
@@ -189,20 +210,25 @@ class HoleViewerDialog(QDialog):
         # Try to load image
         image_data = None
         file_path = None
+        frame_num = 0
+
         if panel_info:
             file_path = panel_info.get('file_path')
-            if file_path and os.path.exists(file_path):
-                try:
-                    nhdf_data = read_em_file(file_path)
-                    if nhdf_data:
-                        # Get frame (use saved frame number or 0)
-                        frame_num = panel_info.get('frame', 0)
-                        if nhdf_data.num_frames > 1 and frame_num < nhdf_data.num_frames:
-                            image_data = nhdf_data.get_frame(frame_num)
-                        else:
-                            image_data = nhdf_data.get_frame(0)
-                except Exception as e:
-                    print(f"Error loading image: {e}")
+            frame_num = panel_info.get('frame', 0)
+
+            if file_path:
+                if os.path.exists(file_path):
+                    try:
+                        nhdf_data = read_em_file(file_path)
+                        if nhdf_data:
+                            if nhdf_data.num_frames > 1 and frame_num < nhdf_data.num_frames:
+                                image_data = nhdf_data.get_frame(frame_num)
+                            else:
+                                image_data = nhdf_data.get_frame(0)
+                    except Exception as e:
+                        print(f"Error loading image from {file_path}: {e}")
+                else:
+                    print(f"Image file not found: {file_path}")
 
         # Clear plot
         plot_widget.clear()
@@ -263,7 +289,13 @@ class HoleViewerDialog(QDialog):
             f"Centroid: ({centroid[0]:.1f}, {centroid[1]:.1f})"
         ]
         if file_path:
-            info_parts.append(f"File: {os.path.basename(file_path)}")
+            file_name = os.path.basename(file_path)
+            if image_data is not None:
+                info_parts.append(f"File: {file_name} (frame {frame_num})")
+            else:
+                info_parts.append(f"File: {file_name} (not loaded)")
+        else:
+            info_parts.append("No image file linked")
 
         info_label.setText(" | ".join(info_parts))
 
