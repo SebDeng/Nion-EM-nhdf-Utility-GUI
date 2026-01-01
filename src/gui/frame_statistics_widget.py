@@ -23,7 +23,7 @@ class FrameStatisticsWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._is_dark_mode = True
+        self._is_dark_mode = False  # Default to light theme
         self._current_data: Optional[Dict[str, Any]] = None
         self._selected_stat = 'mean'  # Default statistic to display
         self._roi_active = False

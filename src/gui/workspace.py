@@ -69,7 +69,7 @@ class WorkspacePanel(QWidget):
         self.panel_id = panel_id or str(uuid.uuid4())
         self.content_widget: Optional[QWidget] = None
         self._selected = False
-        self._is_dark_theme = True  # Default to dark theme
+        self._is_dark_theme = False  # Default to light theme
 
         # Enable drag and drop
         self.setAcceptDrops(True)
@@ -559,7 +559,7 @@ class WorkspaceWidget(QWidget):
         self.panels: List[WorkspacePanel] = []
         self.selected_panel: Optional[WorkspacePanel] = None
         self.root_splitter: Optional[QSplitter] = None
-        self._is_dark_theme = True  # Store current theme state
+        self._is_dark_theme = False  # Store current theme state (default light)
         # Panel factory allows customization of what type of panel is created
         # Default creates WorkspacePanel, but can be set to create WorkspaceDisplayPanel
         self._panel_factory = panel_factory or (lambda: WorkspacePanel())

@@ -172,7 +172,7 @@ class ViewModeToolBar(QToolBar):
         self._button_group = QButtonGroup(self)
         self._button_group.setExclusive(True)
 
-        self._is_dark_mode = True  # Start in dark mode
+        self._is_dark_mode = False  # Start in light mode
         self._apply_theme_styles()  # Apply theme-specific styles
         self._setup_buttons()
 
@@ -282,8 +282,8 @@ class ViewModeToolBar(QToolBar):
 
         # Add theme toggle button
         self._theme_button = QToolButton()
-        self._theme_button.setIcon(ThemeIcon.create_moon())  # Start with moon icon (dark mode)
-        self._theme_button.setToolTip("Toggle Dark/Light Mode")
+        self._theme_button.setIcon(ThemeIcon.create_sun())  # Start with sun icon (light mode)
+        self._theme_button.setToolTip("Switch to Dark Mode")
         self._theme_button.setCheckable(False)
         self._theme_button.clicked.connect(self._toggle_theme)
         self.addWidget(self._theme_button)

@@ -22,7 +22,7 @@ class LineProfileWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._is_dark_mode = True
+        self._is_dark_mode = False  # Default to light theme
         self._current_profile_id = None
         self._current_unit = "nm"  # Default unit
         self._current_data = None  # Store data for unit changes

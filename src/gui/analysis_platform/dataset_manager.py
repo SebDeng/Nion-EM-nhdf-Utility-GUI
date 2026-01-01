@@ -37,6 +37,8 @@ class DataPoint:
     after_centroid_y: float = 0.0
     before_perp_width_nm: float = 0.0
     after_perp_width_nm: float = 0.0
+    before_perimeter_nm: float = 0.0
+    after_perimeter_nm: float = 0.0
 
     # Metadata
     polygon_id_before: int = 0
@@ -52,6 +54,11 @@ class DataPoint:
     def avg_perp_width_nm(self) -> float:
         """Average perpendicular width."""
         return (self.before_perp_width_nm + self.after_perp_width_nm) / 2.0
+
+    @property
+    def delta_perimeter_nm(self) -> float:
+        """Perimeter change (after - before)."""
+        return self.after_perimeter_nm - self.before_perimeter_nm
 
     def get_value(self, variable_name: str) -> float:
         """Get value by variable name for plotting."""
@@ -69,6 +76,9 @@ class DataPoint:
             'before_perp_width_nm': self.before_perp_width_nm,
             'after_perp_width_nm': self.after_perp_width_nm,
             'avg_perp_width_nm': self.avg_perp_width_nm,
+            'before_perimeter_nm': self.before_perimeter_nm,
+            'after_perimeter_nm': self.after_perimeter_nm,
+            'delta_perimeter_nm': self.delta_perimeter_nm,
         }
         return mapping.get(variable_name, 0.0)
 
@@ -88,6 +98,8 @@ class DataPoint:
             'after_centroid_y': self.after_centroid_y,
             'before_perp_width_nm': self.before_perp_width_nm,
             'after_perp_width_nm': self.after_perp_width_nm,
+            'before_perimeter_nm': self.before_perimeter_nm,
+            'after_perimeter_nm': self.after_perimeter_nm,
             'polygon_id_before': self.polygon_id_before,
             'polygon_id_after': self.polygon_id_after,
         }
@@ -109,6 +121,8 @@ class DataPoint:
             after_centroid_y=data.get('after_centroid_y', 0.0),
             before_perp_width_nm=data.get('before_perp_width_nm', 0.0),
             after_perp_width_nm=data.get('after_perp_width_nm', 0.0),
+            before_perimeter_nm=data.get('before_perimeter_nm', 0.0),
+            after_perimeter_nm=data.get('after_perimeter_nm', 0.0),
             polygon_id_before=data.get('polygon_id_before', 0),
             polygon_id_after=data.get('polygon_id_after', 0),
         )
@@ -218,6 +232,9 @@ PLOT_VARIABLES = [
     ('before_perp_width_nm', 'Perp Width (before)', 'Perpendicular width before'),
     ('after_perp_width_nm', 'Perp Width (after)', 'Perpendicular width after'),
     ('avg_perp_width_nm', 'Avg Perp Width (nm)', 'Average perpendicular width'),
+    ('before_perimeter_nm', 'Perimeter (before)', 'Perimeter before'),
+    ('after_perimeter_nm', 'Perimeter (after)', 'Perimeter after'),
+    ('delta_perimeter_nm', 'ΔPerimeter (nm)', 'Perimeter change'),
 ]
 
 # Default colors for datasets
@@ -442,6 +459,8 @@ class DatasetManager(QObject):
                             after_centroid_y=float(row.get('after_centroid_y', 0) or 0),
                             before_perp_width_nm=float(row.get('before_perp_width_nm', 0) or 0),
                             after_perp_width_nm=float(row.get('after_perp_width_nm', 0) or 0),
+                            before_perimeter_nm=float(row.get('before_perimeter_nm', 0) or 0),
+                            after_perimeter_nm=float(row.get('after_perimeter_nm', 0) or 0),
                             polygon_id_before=int(row.get('before_polygon_id', 0) or 0),
                             polygon_id_after=int(row.get('after_polygon_id', 0) or 0),
                         )

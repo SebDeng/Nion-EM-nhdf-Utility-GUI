@@ -18,7 +18,7 @@ class AnalysisResultsPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._is_dark_mode = True
+        self._is_dark_mode = False  # Default to light theme
         self._setup_ui()
         self._apply_theme()
 

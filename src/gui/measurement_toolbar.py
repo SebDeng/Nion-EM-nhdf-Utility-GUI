@@ -264,7 +264,7 @@ class MeasurementToolBar(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("MeasurementToolBar")
-        self._is_dark_mode = True
+        self._is_dark_mode = False  # Default to light theme
         self._measurement_count = 0  # Track number of active measurements
 
         self._setup_ui()

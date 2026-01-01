@@ -282,8 +282,9 @@ def main():
     app.setOrganizationName("NionUtility")
     app.setOrganizationDomain("github.com/SebDeng")
 
-    # Apply dark theme
-    apply_dark_theme(app)
+    # Apply light theme by default (use Fusion style for consistency)
+    app.setStyle("Fusion")
+    # Note: Dark theme can be toggled via View toolbar button
 
     # Set application icon (use pre-rounded PNG for proper appearance)
     icon_path = os.path.join(_SCRIPT_DIR, "assets", "AppIcon_rounded.png")

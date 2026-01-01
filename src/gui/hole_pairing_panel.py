@@ -25,7 +25,7 @@ from src.gui.hole_pairing_data import (
     HoleReference, SinkPairing, SmallHoleFate,
     PairingSession, HoleFate,
     calculate_proper_centroid, calculate_polygon_area,
-    calculate_perpendicular_width
+    calculate_perpendicular_width, calculate_perimeter
 )
 from src.gui.heatmap_visualization_dialog import HeatMapVisualizationDialog
 
@@ -46,7 +46,7 @@ class HolePairingPanel(QWidget):
         self._workspace = None  # Reference to WorkspaceWidget
         self._main_window = None  # Reference to main window for panel access
         self._session = PairingSession()
-        self._is_dark_mode = True
+        self._is_dark_mode = False  # Default to light theme
 
         # Multi-session storage: key = "before_id::after_id" -> session
         self._sessions: Dict[str, PairingSession] = {}
@@ -1678,6 +1678,7 @@ class HolePairingPanel(QWidget):
                 header.extend([
                     "before_perp_width_nm", "after_perp_width_nm", "avg_perp_width_nm",
                     "half_avg_perp_over_r",
+                    "before_perimeter_nm", "after_perimeter_nm",
                     "before_centroid_x", "before_centroid_y",
                     "after_centroid_x", "after_centroid_y"
                 ])
@@ -1709,6 +1710,14 @@ class HolePairingPanel(QWidget):
                     avg_perp_width = (before_perp_width + after_perp_width) / 2.0
                     half_avg_perp_over_r = (avg_perp_width / 2.0) / p.distance_to_center_nm if p.distance_to_center_nm > 0 else 0
 
+                    # Calculate perimeters
+                    before_perimeter = 0.0
+                    after_perimeter = 0.0
+                    if p.before_hole and p.before_hole.vertices:
+                        before_perimeter = calculate_perimeter(p.before_hole.vertices) * calibration
+                    if p.after_hole and p.after_hole.vertices:
+                        after_perimeter = calculate_perimeter(p.after_hole.vertices) * calibration
+
                     # Calculate normalized delta area
                     delta_area_normalized = p.area_change_nm2 / fluence if fluence > 0 else 0
 
@@ -1723,6 +1732,7 @@ class HolePairingPanel(QWidget):
                     row.extend([
                         f"{before_perp_width:.4f}", f"{after_perp_width:.4f}", f"{avg_perp_width:.4f}",
                         f"{half_avg_perp_over_r:.6f}",
+                        f"{before_perimeter:.4f}", f"{after_perimeter:.4f}",
                         f"{before_cx:.2f}", f"{before_cy:.2f}",
                         f"{after_cx:.2f}", f"{after_cy:.2f}"
                     ])

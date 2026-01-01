@@ -48,7 +48,7 @@ class WorkspaceMainWindow(QMainWindow):
         self._loaded_files: Dict[str, NHDFData] = {}  # path -> data mapping
         self._settings = QSettings("NionUtility", "nhdfGUI")
         self._workspace_layouts: List[Dict] = []  # Saved layouts
-        self._is_dark_mode = True  # Track current theme
+        self._is_dark_mode = False  # Track current theme (default to light)
         self._current_display_panel = None  # Track active display panel for reference
         self._measurement_connected_panels: Set[int] = set()  # Track panels with measurement signal connected
 
@@ -65,6 +65,9 @@ class WorkspaceMainWindow(QMainWindow):
 
         # Initialize first workspace
         self._init_default_workspace()
+
+        # Apply initial theme to all components (default is light mode)
+        self._on_theme_changed(self._is_dark_mode)
 
     def _setup_ui(self):
         """Set up the main UI layout with workspace."""
@@ -749,6 +752,10 @@ class WorkspaceMainWindow(QMainWindow):
         # Update workspace tab bar theme
         if hasattr(self, '_workspace_tab_bar'):
             self._workspace_tab_bar.set_theme(is_dark)
+
+        # Update hole pairing panel theme
+        if hasattr(self, '_hole_pairing_panel'):
+            self._hole_pairing_panel.set_theme(is_dark)
 
         if is_dark:
             # Apply dark theme

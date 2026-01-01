@@ -28,7 +28,7 @@ class FrameStatisticsExportDialog(QDialog):
         self.setModal(True)
         self.resize(900, 600)
 
-        self._is_dark_mode = True
+        self._is_dark_mode = False  # Default to light theme
 
         # Store export settings
         self.export_settings = {

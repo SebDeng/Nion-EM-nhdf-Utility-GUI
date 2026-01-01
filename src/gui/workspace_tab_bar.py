@@ -28,7 +28,7 @@ class WorkspaceTab(QPushButton):
         super().__init__(name, parent)
         self._uuid = workspace_uuid
         self._is_current = False
-        self._is_dark_mode = True
+        self._is_dark_mode = False  # Default to light theme
         self._drag_start_pos = None
 
         self.setCheckable(True)
@@ -221,7 +221,7 @@ class WorkspaceTabBar(QWidget):
         self._tabs: Dict[str, WorkspaceTab] = {}  # uuid -> tab
         self._tab_order: List[str] = []  # Track tab order
         self._current_uuid: Optional[str] = None
-        self._is_dark_mode = True
+        self._is_dark_mode = False  # Default to light theme
         self._dragging_uuid: Optional[str] = None
 
         self._setup_ui()

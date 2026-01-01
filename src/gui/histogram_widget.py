@@ -14,7 +14,7 @@ class HistogramWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._is_dark_mode = True
+        self._is_dark_mode = False  # Default to light theme
         self._current_data = None
         self._num_bins = 256
         self._log_scale = False

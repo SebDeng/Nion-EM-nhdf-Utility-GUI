@@ -77,6 +77,8 @@ class DataPointInfoPanel(QWidget):
             ('after_centroid', 'Centroid (after):'),
             ('before_perp_width', 'Perp Width (before):'),
             ('after_perp_width', 'Perp Width (after):'),
+            ('before_perimeter', 'Perimeter (before):'),
+            ('after_perimeter', 'Perimeter (after):'),
         ]
 
         for row, (field_id, field_label) in enumerate(fields):
@@ -118,6 +120,8 @@ class DataPointInfoPanel(QWidget):
         self._labels['after_centroid'].setText(f"({point.after_centroid_x:.1f}, {point.after_centroid_y:.1f})")
         self._labels['before_perp_width'].setText(f"{point.before_perp_width_nm:.4f} nm")
         self._labels['after_perp_width'].setText(f"{point.after_perp_width_nm:.4f} nm")
+        self._labels['before_perimeter'].setText(f"{point.before_perimeter_nm:.4f} nm")
+        self._labels['after_perimeter'].setText(f"{point.after_perimeter_nm:.4f} nm")
 
         self._title_label.setText(f"Selected: {point.pairing_id}")
         self._copy_btn.setEnabled(True)
@@ -169,6 +173,8 @@ class DataPointInfoPanel(QWidget):
             f"Centroid (after): ({point.after_centroid_x:.1f}, {point.after_centroid_y:.1f})\n"
             f"Perp Width (before): {point.before_perp_width_nm:.4f} nm\n"
             f"Perp Width (after): {point.after_perp_width_nm:.4f} nm\n"
+            f"Perimeter (before): {point.before_perimeter_nm:.4f} nm\n"
+            f"Perimeter (after): {point.after_perimeter_nm:.4f} nm\n"
         )
 
         clipboard = QApplication.clipboard()

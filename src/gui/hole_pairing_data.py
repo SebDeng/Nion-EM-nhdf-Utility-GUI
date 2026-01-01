@@ -404,3 +404,29 @@ def calculate_perpendicular_width(vertices: List[Tuple[float, float]],
     # Width is the range of projections
     width = max(projections) - min(projections)
     return width
+
+
+def calculate_perimeter(vertices: List[Tuple[float, float]]) -> float:
+    """
+    Calculate the perimeter (total edge length) of a polygon.
+
+    Args:
+        vertices: List of (x, y) vertex coordinates
+
+    Returns:
+        Perimeter in the same units as input (pixels or nm)
+    """
+    import math
+
+    n = len(vertices)
+    if n < 2:
+        return 0.0
+
+    perimeter = 0.0
+    for i in range(n):
+        j = (i + 1) % n  # Next vertex (wraps around to close polygon)
+        dx = vertices[j][0] - vertices[i][0]
+        dy = vertices[j][1] - vertices[i][1]
+        perimeter += math.sqrt(dx * dx + dy * dy)
+
+    return perimeter

@@ -673,14 +673,14 @@ class DisplayPanel(QWidget):
 
         # Image display area using pyqtgraph
         self._graphics_widget = pg.GraphicsLayoutWidget()
-        self._graphics_widget.setBackground('#1e1e1e')  # Default dark background
+        self._graphics_widget.setBackground('w')  # Default light background
 
         # Create plot item for image display
         self._plot_item = self._graphics_widget.addPlot()
         self._plot_item.setAspectLocked(True)
         self._plot_item.hideAxis('left')
         self._plot_item.hideAxis('bottom')
-        self._plot_item.getViewBox().setBackgroundColor('#1e1e1e')  # Set ViewBox background too
+        self._plot_item.getViewBox().setBackgroundColor('w')  # Set ViewBox background too
 
         # Image item
         self._image_item = pg.ImageItem()
