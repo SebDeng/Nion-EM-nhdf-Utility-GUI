@@ -553,45 +553,10 @@ class AnalysisPlatformWindow(QMainWindow):
             )
             return
 
-        # Find the main workspace window
-        from PySide6.QtWidgets import QApplication
-        main_window = None
-        for widget in QApplication.topLevelWidgets():
-            if widget.__class__.__name__ == 'WorkspaceMainWindow':
-                main_window = widget
-                break
-
-        if main_window:
-            # Ask user if they want to load the session
-            reply = QMessageBox.question(
-                self, "Open Session",
-                f"Open the workspace session?\n\n"
-                f"Session: {os.path.basename(session_path)}\n"
-                f"Pairing ID: {pairing_id}\n\n"
-                f"Note: This will load the session in the main workspace.\n"
-                f"You can then use the Hole Pairing panel to find this hole.",
-                QMessageBox.Yes | QMessageBox.No
-            )
-
-            if reply == QMessageBox.Yes:
-                try:
-                    # Load the session
-                    if hasattr(main_window, '_session_manager'):
-                        main_window._session_manager.load_session(session_path)
-                        self._statusbar.showMessage(f"Loaded session. Look for pairing: {pairing_id}")
-                    else:
-                        QMessageBox.warning(self, "Error", "Could not access session manager.")
-                except Exception as e:
-                    QMessageBox.warning(self, "Error", f"Failed to load session: {e}")
-        else:
-            # No main window found, just show info
-            QMessageBox.information(
-                self, "Session Information",
-                f"Session file: {session_path}\n"
-                f"Pairing ID: {pairing_id}\n\n"
-                "Open the main application window and load this session\n"
-                "to view the original hole pairing data."
-            )
+        # Open the hole viewer dialog
+        from .hole_viewer_dialog import HoleViewerDialog
+        dialog = HoleViewerDialog(session_path, pairing_id, parent=self)
+        dialog.exec()
 
     def _export_plot(self):
         """Export plot as PNG."""
