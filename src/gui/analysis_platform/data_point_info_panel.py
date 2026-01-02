@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QGroupBox,
     QPushButton, QGridLayout, QApplication
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt
 
 from typing import Optional
 
@@ -17,9 +17,6 @@ from .dataset_manager import DatasetManager, Dataset, DataPoint
 
 class DataPointInfoPanel(QWidget):
     """Panel showing details of a selected data point."""
-
-    # Signal emitted when user wants to show point in original session
-    show_in_session = Signal(str, str)  # (session_path, pairing_id)
 
     def __init__(self, dataset_manager: DatasetManager, parent=None):
         super().__init__(parent)
@@ -48,12 +45,7 @@ class DataPointInfoPanel(QWidget):
         self._copy_btn.setEnabled(False)
         header_layout.addWidget(self._copy_btn)
 
-        self._show_session_btn = QPushButton("Show in Session")
-        self._show_session_btn.setToolTip("Open the original workspace session to view this hole")
-        self._show_session_btn.clicked.connect(self._on_show_in_session)
-        self._show_session_btn.setEnabled(False)
-        self._show_session_btn.setVisible(False)  # Only show when session is available
-        header_layout.addWidget(self._show_session_btn)
+        # Note: "Show in Session" button removed - hole viewer panel is now embedded
 
         layout.addLayout(header_layout)
 
@@ -126,11 +118,6 @@ class DataPointInfoPanel(QWidget):
         self._title_label.setText(f"Selected: {point.pairing_id}")
         self._copy_btn.setEnabled(True)
 
-        # Show "Show in Session" button if session path is available
-        has_session = bool(dataset.session_path)
-        self._show_session_btn.setVisible(has_session)
-        self._show_session_btn.setEnabled(has_session)
-
     def clear(self):
         """Clear the displayed point."""
         self._current_dataset = None
@@ -141,16 +128,6 @@ class DataPointInfoPanel(QWidget):
 
         self._title_label.setText("Selected Point")
         self._copy_btn.setEnabled(False)
-        self._show_session_btn.setEnabled(False)
-        self._show_session_btn.setVisible(False)
-
-    def _on_show_in_session(self):
-        """Handle show in session button click."""
-        if self._current_dataset and self._current_point and self._current_dataset.session_path:
-            self.show_in_session.emit(
-                self._current_dataset.session_path,
-                self._current_point.pairing_id
-            )
 
     def _copy_to_clipboard(self):
         """Copy point info to clipboard."""

@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QComboBox, QMessageBox, QFormLayout
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QIcon, QPixmap, QPainter, QBrush, QPen
 
 import os
 import csv
@@ -129,10 +129,25 @@ class DatasetImportDialog(QDialog):
 
         layout.addLayout(button_layout)
 
-    def _color_icon(self, color: str) -> str:
-        """Create a colored square for combo box."""
-        # Return just the color name for now - icons would need more setup
-        return ""
+    def _color_icon(self, color_str: str) -> QIcon:
+        """Create a colored square icon for combo box."""
+        size = 16
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.transparent)
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        color = QColor(color_str)
+        painter.setBrush(QBrush(color))
+        painter.setPen(QPen(color.darker(120), 1))
+
+        # Draw filled circle
+        margin = 2
+        painter.drawEllipse(margin, margin, size - 2 * margin, size - 2 * margin)
+
+        painter.end()
+        return QIcon(pixmap)
 
     def _browse_file(self):
         """Browse for CSV file."""

@@ -21,6 +21,7 @@ from .dataset_manager import DatasetManager, Dataset, AnalysisProject
 from .dataset_import_dialog import DatasetImportDialog
 from .interactive_plot_widget import InteractivePlotWidget
 from .data_point_info_panel import DataPointInfoPanel
+from .hole_viewer_panel import HoleViewerPanel
 
 
 def create_color_icon(color_str: str, symbol: str = 'o', size: int = 16) -> QIcon:
@@ -286,8 +287,12 @@ class AnalysisPlatformWindow(QMainWindow):
         self._plot_widget = InteractivePlotWidget(self._manager)
         splitter.addWidget(self._plot_widget)
 
-        # Set splitter sizes (30% left, 70% center)
-        splitter.setSizes([300, 700])
+        # === Right Panel: Hole Viewer ===
+        self._hole_viewer = HoleViewerPanel()
+        splitter.addWidget(self._hole_viewer)
+
+        # Set splitter sizes (25% left, 50% center, 25% right)
+        splitter.setSizes([300, 600, 300])
 
         main_layout.addWidget(splitter)
 
@@ -303,7 +308,6 @@ class AnalysisPlatformWindow(QMainWindow):
         self._manager.project_changed.connect(self._update_window_title)
         self._plot_widget.point_clicked.connect(self._on_point_clicked)
         self._plot_widget.point_hovered.connect(self._on_point_hovered)
-        self._info_panel.show_in_session.connect(self._on_show_in_session)
 
     def _update_window_title(self):
         """Update window title with project name."""
@@ -525,6 +529,15 @@ class AnalysisPlatformWindow(QMainWindow):
         """Handle point click."""
         self._info_panel.set_point(dataset_id, pairing_id)
 
+        # Also update hole viewer if session path is available
+        result = self._manager.get_point_by_id(pairing_id)
+        if result:
+            dataset, point = result
+            if dataset.session_path:
+                self._hole_viewer.set_point(dataset.session_path, pairing_id)
+            else:
+                self._hole_viewer.clear()
+
     def _on_point_hovered(self, dataset_id: str, pairing_id: str):
         """Handle point hover."""
         if dataset_id and pairing_id:
@@ -540,23 +553,6 @@ class AnalysisPlatformWindow(QMainWindow):
             self._statusbar.showMessage(
                 f"{len(self._manager.datasets)} datasets, {total_points} total points"
             )
-
-    def _on_show_in_session(self, session_path: str, pairing_id: str):
-        """Handle request to show point in original session."""
-        import os
-
-        if not os.path.exists(session_path):
-            QMessageBox.warning(
-                self, "Session Not Found",
-                f"The session file could not be found:\n{session_path}\n\n"
-                "The file may have been moved or deleted."
-            )
-            return
-
-        # Open the hole viewer dialog
-        from .hole_viewer_dialog import HoleViewerDialog
-        dialog = HoleViewerDialog(session_path, pairing_id, parent=self)
-        dialog.exec()
 
     def _export_plot(self):
         """Export plot as PNG."""

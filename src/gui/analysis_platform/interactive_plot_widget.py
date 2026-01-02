@@ -36,6 +36,7 @@ class InteractivePlotWidget(QWidget):
         self._fit_lines: Dict[str, pg.PlotDataItem] = {}         # dataset_id -> line
         self._point_data: Dict[str, List[DataPoint]] = {}        # dataset_id -> points list
         self._selected_point: Optional[Tuple[str, str]] = None   # (dataset_id, pairing_id)
+        self._highlight_item: Optional[pg.ScatterPlotItem] = None  # Highlight ring for selected point
 
         self._setup_ui()
         self._connect_signals()
@@ -198,23 +199,33 @@ class InteractivePlotWidget(QWidget):
                 x_arr = np.array(x_data)
                 y_arr = np.array(y_data)
 
-                slope, intercept, r_value, p_value, std_err = stats.linregress(x_arr, y_arr)
+                # Check if all x values are identical (would cause linregress to fail)
+                if np.all(x_arr == x_arr[0]):
+                    # Cannot fit a line - all x values are identical
+                    stats_parts.append(f"{dataset.name}: n={len(x_data)}, cannot fit (identical x)")
+                    continue
 
-                # Create fit line
-                x_fit = np.array([min(x_arr), max(x_arr)])
-                y_fit = slope * x_fit + intercept
+                try:
+                    slope, intercept, r_value, p_value, std_err = stats.linregress(x_arr, y_arr)
 
-                fit_line = pg.PlotDataItem(
-                    x_fit, y_fit,
-                    pen=pg.mkPen(color, width=2, style=Qt.DashLine)
-                )
-                fit_line.setZValue(50)
-                self._plot_widget.addItem(fit_line)
-                self._fit_lines[dataset.dataset_id] = fit_line
+                    # Create fit line
+                    x_fit = np.array([min(x_arr), max(x_arr)])
+                    y_fit = slope * x_fit + intercept
 
-                # Statistics - show slope (m), intercept (b), and R²
-                r_squared = r_value ** 2
-                stats_parts.append(f"{dataset.name}: n={len(x_data)}, m={slope:.2f}, b={intercept:.2f}, R²={r_squared:.3f}")
+                    fit_line = pg.PlotDataItem(
+                        x_fit, y_fit,
+                        pen=pg.mkPen(color, width=2, style=Qt.DashLine)
+                    )
+                    fit_line.setZValue(50)
+                    self._plot_widget.addItem(fit_line)
+                    self._fit_lines[dataset.dataset_id] = fit_line
+
+                    # Statistics - show slope (m), intercept (b), and R²
+                    r_squared = r_value ** 2
+                    stats_parts.append(f"{dataset.name}: n={len(x_data)}, m={slope:.2f}, b={intercept:.2f}, R²={r_squared:.3f}")
+                except ValueError:
+                    # Fallback for any other regression issues
+                    stats_parts.append(f"{dataset.name}: n={len(x_data)}, cannot fit")
 
         # Update fit line visibility
         self._update_fit_visibility()
@@ -225,6 +236,11 @@ class InteractivePlotWidget(QWidget):
             self._stats_label.setText(" | ".join(stats_parts))
         else:
             self._stats_label.setText("No data to display")
+
+        # Restore highlight if a point was selected
+        if self._selected_point:
+            dataset_id, pairing_id = self._selected_point
+            self._highlight_point(dataset_id, pairing_id)
 
     def _get_symbol(self, symbol_code: str) -> str:
         """Convert symbol code to pyqtgraph symbol."""
@@ -360,14 +376,43 @@ class InteractivePlotWidget(QWidget):
         return None
 
     def _highlight_point(self, dataset_id: str, pairing_id: str):
-        """Highlight a specific point."""
-        # For now, we'll just update the selection state
-        # In the future, we could add a visual highlight
-        pass
+        """Highlight a specific point with a ring."""
+        # Clear existing highlight
+        self._clear_highlight()
+
+        # Find the point coordinates
+        if dataset_id not in self._point_data:
+            return
+
+        x_var = self._x_combo.currentData()
+        y_var = self._y_combo.currentData()
+
+        for point in self._point_data[dataset_id]:
+            if point.pairing_id == pairing_id:
+                x_val = point.get_value(x_var)
+                y_val = point.get_value(y_var)
+
+                if np.isnan(x_val) or np.isnan(y_val):
+                    return
+
+                # Create highlight ring (larger, bright color, no fill)
+                self._highlight_item = pg.ScatterPlotItem(
+                    x=[x_val],
+                    y=[y_val],
+                    size=25,
+                    pen=pg.mkPen('#FF0000', width=3),  # Red ring
+                    brush=pg.mkBrush(None),  # No fill
+                    symbol='o'
+                )
+                self._highlight_item.setZValue(200)  # Above everything
+                self._plot_widget.addItem(self._highlight_item)
+                return
 
     def _clear_highlight(self):
         """Clear point highlight."""
-        pass
+        if self._highlight_item is not None:
+            self._plot_widget.removeItem(self._highlight_item)
+            self._highlight_item = None
 
     def select_point(self, dataset_id: str, pairing_id: str):
         """Programmatically select a point."""
